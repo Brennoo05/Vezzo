@@ -392,23 +392,23 @@ let state = {
 
   profissionais: [
     { id: 1, nome: 'Dra. Camila Duarte', email: 'camila@email.com', senha: '123', profissao: 'Psicóloga',
-      especialidade: 'Psicologia Clínica', avatar: '👩‍⚕️', clinicaId: 2,
+      especialidade: 'Psicologia Clínica', avatar: '👩⚕️', clinicaId: 2,
       descricao: 'Atendimento focado em ansiedade, autoestima e desenvolvimento pessoal, com escuta acolhedora e abordagem cognitivo-comportamental.',
       modalidadeAtendimento: 'ambos', localAtendimento: 'Rua das Flores, 123 - Centro' },
     { id: 2, nome: 'Dr. João Silva', email: 'joao@email.com', senha: '123', profissao: 'Fisioterapeuta',
-      especialidade: 'Fisioterapia Ortopédica', avatar: '🧑‍⚕️', clinicaId: 2,
+      especialidade: 'Fisioterapia Ortopédica', avatar: '🧑⚕️', clinicaId: 2,
       descricao: 'Reabilitação de lesões musculares e articulares, com foco em retorno seguro às atividades do dia a dia.',
       modalidadeAtendimento: 'presencial', localAtendimento: 'Av. Central, 456 - Sala 12' },
     { id: 3, nome: 'Dr. Marcos Lima', email: 'marcos@email.com', senha: '123', profissao: 'Nutricionista',
-      especialidade: 'Nutrição Esportiva', avatar: '🧑‍⚕️', clinicaId: 2,
+      especialidade: 'Nutrição Esportiva', avatar: '🧑⚕️', clinicaId: 2,
       descricao: 'Planejamento alimentar personalizado para performance esportiva e emagrecimento saudável.',
       modalidadeAtendimento: 'online', localAtendimento: '' },
     { id: 4, nome: 'Dr. Ricardo Andrade', email: 'ricardo@email.com', senha: '123', profissao: 'Cardiologista',
-      especialidade: 'Cardiologia Clínica', avatar: '🧑‍⚕️', clinicaId: 1,
+      especialidade: 'Cardiologia Clínica', avatar: '🧑⚕️', clinicaId: 1,
       descricao: 'Atendimento cardiológico geral, avaliação de risco cardiovascular e acompanhamento de hipertensão.',
       modalidadeAtendimento: 'presencial', localAtendimento: 'Av. Paulista, 1500 - Conjunto 12 - Bela Vista' },
     { id: 5, nome: 'Dra. Fernanda Souza', email: 'fernanda@email.com', senha: '123', profissao: 'Cardiologista',
-      especialidade: 'Ecocardiografia', avatar: '👩‍⚕️', clinicaId: 1,
+      especialidade: 'Ecocardiografia', avatar: '👩⚕️', clinicaId: 1,
       descricao: 'Especialista em ecocardiograma e cardiologia preventiva, com foco em diagnóstico precoce.',
       modalidadeAtendimento: 'presencial', localAtendimento: 'Av. Paulista, 1500 - Conjunto 12 - Bela Vista' },
   ],
@@ -446,6 +446,9 @@ let state = {
   anotacoesPrivadas: {},
   reagendamentos: {},
   avaliacoes: {},
+  preferenciasEncaixe: [],
+  ofertasEncaixe: [],
+  proximoIdOfertaEncaixe: 1,
   configuracoes: { cancelamentoHoras: 4, confirmacaoHoras: 24, confirmacaoV2: true, aceiteFilaMin: 120, lembrete24h: true, lembrete2h: true, janelaExclusividadeHoras: 48 }
 };
 
@@ -548,7 +551,9 @@ function adicionarHorarioPorData(profId, data, hora, modalidade, agendaId){
   if (horarioBloqueado(profId, data, ag)) return { ok:false, motivo:'bloqueado' };
   const conflito = state.horarios.find(h => h.profissionalId===profId && h.data===data && h.hora===hora && h.agendaId===ag);
   if (conflito) return { ok:false, motivo:'conflito', agendaId: conflito.agendaId };
-  state.horarios.push({ id: state.proximoIdHorario++, profissionalId:profId, agendaId: ag, data, hora, modalidade, status:'livre', pacienteId:null, fila:[], filaOrigem:[] });
+  const novoId = state.proximoIdHorario++;
+  state.horarios.push({ id: novoId, profissionalId:profId, agendaId: ag, data, hora, modalidade, status:'livre', pacienteId:null, fila:[], filaOrigem:[] });
+  setTimeout(() => tentarEncaixe(novoId), 0);
   return { ok:true };
 }
 function bloquearPeriodo(){
@@ -762,10 +767,29 @@ function carregarDados() {
     state.anotacoesPrivadas = state.anotacoesPrivadas && typeof state.anotacoesPrivadas === 'object' ? state.anotacoesPrivadas : {};
     state.reagendamentos = state.reagendamentos && typeof state.reagendamentos === 'object' ? state.reagendamentos : {};
     state.avaliacoes = state.avaliacoes && typeof state.avaliacoes === 'object' ? state.avaliacoes : {};
+    state.preferenciasEncaixe = Array.isArray(state.preferenciasEncaixe) ? state.preferenciasEncaixe : [];
+    state.ofertasEncaixe = Array.isArray(state.ofertasEncaixe) ? state.ofertasEncaixe : [];
     state.lembretesEnviados = state.lembretesEnviados && typeof state.lembretesEnviados === 'object' ? state.lembretesEnviados : {};
     state.configuracoes = state.configuracoes && typeof state.configuracoes === 'object' ? state.configuracoes : {};
     state.horarios.forEach(h => { h.id=Number(h.id); h.profissionalId=Number(h.profissionalId); h.pacienteId=h.pacienteId==null?null:Number(h.pacienteId); h.fila=Array.isArray(h.fila)?h.fila.map(Number):[]; h.status=h.status|| (h.pacienteId?'ocupado':'livre'); if(!Array.isArray(h.filaOrigem) || h.filaOrigem.length!==h.fila.length) h.filaOrigem = h.fila.map(()=>h.agendaId); });
     state.consultas.forEach(c => { c.id=Number(c.id); c.pacienteId=Number(c.pacienteId); c.horarioId=Number(c.horarioId); c.status=c.status||'confirmada'; });
+    // Migração do encaixe: faixas múltiplas, ids inteiros de oferta, validade e paciente em estados antigos
+    state.preferenciasEncaixe.forEach(p => {
+      p.consultaId = Number(p.consultaId);
+      if (!Array.isArray(p.diasDisponiveis)) {
+        p.diasDisponiveis = (p.dias || []).map(d => ({ diaSemana: Number(d), faixas: [{ inicio: p.horaInicio || '08:00', fim: p.horaFim || '18:00' }] }));
+        delete p.dias; delete p.horaInicio; delete p.horaFim;
+      }
+      if (p.pacienteId == null) { const cc = state.consultas.find(x => x.id === p.consultaId); if (cc) p.pacienteId = cc.pacienteId; }
+      if (p.horaLimite == null) p.horaLimite = '';
+    });
+    if (!Number.isInteger(state.proximoIdOfertaEncaixe)) state.proximoIdOfertaEncaixe = 1 + Math.max(0, ...state.ofertasEncaixe.map(o => Number.isInteger(o.id) ? o.id : 0));
+    state.ofertasEncaixe.forEach(o => {
+      if (!Number.isInteger(o.id)) { const ant = o.id; o.id = state.proximoIdOfertaEncaixe++; state.notificacoes.forEach(n => { if (n.ofertaEncaixeId === ant) n.ofertaEncaixeId = o.id; }); }
+      o.consultaId = Number(o.consultaId); o.horarioLivreId = Number(o.horarioLivreId);
+      if (o.pacienteId == null) { const cc = state.consultas.find(x => x.id === o.consultaId); if (cc) o.pacienteId = cc.pacienteId; }
+      if (!o.expiraEm) o.expiraEm = new Date(new Date(o.criadaEm || Date.now()).getTime() + 120 * 60000).toISOString();
+    });
     // Migração leve: garante que dados salvos antes destas melhorias não quebrem a tela.
     // Compatibilidade com estados salvos de versões anteriores: IDs devem ter o mesmo tipo.
     state.profissionais = (state.profissionais || []).map(p => ({...p, id:Number(p.id)}));
@@ -823,7 +847,7 @@ function carregarDados() {
     })();
     state.profissionais.forEach(p => {
       if (!p.especialidade) p.especialidade = p.profissao;
-      if (!p.avatar) p.avatar = '🧑‍⚕️';
+      if (!p.avatar) p.avatar = '🧑⚕️';
       if (!p.descricao) p.descricao = 'Profissional cadastrado na plataforma Fluxo.';
       if (!p.modalidadeAtendimento) p.modalidadeAtendimento = 'presencial';
       if (p.localAtendimento === undefined) p.localAtendimento = '';
@@ -925,6 +949,7 @@ function consultaJaPassou(h){
 }
 function lembreteChave(c, tipo){ return `${c.id}:${tipo}`; }
 function processarLembretes(){
+  encProcessar();
   if(!state.usuario) return;
   const agora = Date.now();
   const limite = Number(state.configuracoes.confirmacaoHoras) || 24;
@@ -1020,7 +1045,7 @@ function salvarAnotacaoPrivada(consultaId){
 }
 function abrirReagendamento(consultaId){ if(state.usuario?.tipo !== 'paciente'){ mensagemErro('O reagendamento é feito pelo paciente.'); return; } const c=state.consultas.find(x=>x.id===consultaId); if(!c)return; const h=getHorario(c.horarioId); if(!h)return; const prof=getProfissional(h.profissionalId); const disponiveis=state.horarios.filter(x=>x.profissionalId===h.profissionalId&&x.agendaId===h.agendaId&&x.status==='livre'&&horarioDisponivelParaPaciente(x)&&!dentroJanelaExclusividade(x)&&!horarioJaEncerrado(x.data,x.hora)).sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).slice(0,12); const op=disponiveis.map(x=>`<option value="${x.id}">${formatarDataCurta(x.data)} · ${x.hora} · ${x.modalidade==='online'?'Online':'Presencial'}</option>`).join('');
   const modal=document.createElement('div'); modal.id='modal-reagendamento'; modal.className='fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4'; modal.innerHTML=`<div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl"><h3 class="font-display text-xl">Reagendar consulta</h3><p class="text-sm text-[var(--ink-soft)] mt-2">${escaparHtml(prof?.nome||'Profissional')} · escolha um novo horário.</p>${op?`<select id="novo-horario-reag" class="w-full border border-[var(--line)] rounded-lg p-2 mt-4">${op}</select><div class="flex gap-2 mt-5"><button class="btn-ghost flex-1 py-2" onclick="document.getElementById('modal-reagendamento')?.remove()">Cancelar</button><button class="btn-primary flex-1 py-2" onclick="confirmarReagendamento(${consultaId})">Reagendar</button></div>`:`<div class="card p-4 mt-4 text-sm">Não há horários livres disponíveis no momento.</div><button class="btn-ghost w-full py-2 mt-4" onclick="document.getElementById('modal-reagendamento')?.remove()">Fechar</button>`}</div>`; document.body.appendChild(modal); }
-function confirmarReagendamento(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); const novoId=Number(document.getElementById('novo-horario-reag')?.value); const novo=getHorario(novoId); if(!c||!novo||novo.status!=='livre'||!horarioDisponivelParaPaciente(novo))return mensagemErro('Esse horário não está mais disponível.'); const antigo=getHorario(c.horarioId); const prof=getProfissional(novo.profissionalId); if(antigo) { antigo.pacienteId=null; antigo.status='livre'; }
+function confirmarReagendamento(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); const novoId=Number(document.getElementById('novo-horario-reag')?.value); const novo=getHorario(novoId); if(!c||!novo||novo.status!=='livre'||!horarioDisponivelParaPaciente(novo))return mensagemErro('Esse horário não está mais disponível.'); const antigo=getHorario(c.horarioId); const prof=getProfissional(novo.profissionalId); if(antigo) liberarHorarioEPromover(antigo.id, null);
   c.horarioId=novo.id; c.status='confirmada'; novo.pacienteId=c.pacienteId; novo.status='ocupado'; c.reagendadoDe=antigo?.id||null; c.reagendadoEm=new Date().toISOString(); state.reagendamentos[c.id]={de:antigo?.id||null,para:novo.id,data:c.reagendadoEm}; notificar(c.pacienteId,'reagendamento',`Sua consulta com ${prof?.nome||'profissional'} foi reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`); notificar(null,'reagendamento_profissional',`Consulta de ${getPaciente(c.pacienteId)?.nome||'cliente'} reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`,prof?.id); document.getElementById('modal-reagendamento')?.remove(); mostrarToast('Consulta reagendada com sucesso.'); render(); }
 function salvarAvaliacao(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); if(!c||c.status!=='realizada')return; const nota=Number(document.getElementById('nota-av-'+consultaId)?.value||0); const comentario=(document.getElementById('coment-av-'+consultaId)?.value||'').trim(); if(nota<1||nota>5)return mensagemErro('Escolha uma nota de 1 a 5.'); state.avaliacoes[consultaId]={nota,comentario,criadoEm:new Date().toISOString()}; const h=getHorario(c.horarioId); notificar(null,'avaliacao_recebida',`Você recebeu uma avaliação de ${getPaciente(c.pacienteId)?.nome||'cliente'}.`,h?.profissionalId); mostrarToast('Avaliação enviada. Obrigado!'); render(); }
 function agendar(pacienteId, horarioId, opcoes = {}){
@@ -1146,7 +1171,145 @@ function liberarHorarioEPromover(horarioId, consultaCanceladaId){
   } else {
     h.pacienteId = null;
     h.status = 'livre';
+    // Nova vaga disponível: tenta encaixar pacientes com preferência de horário mais cedo
+    setTimeout(() => tentarEncaixe(h.id), 0);
   }
+}
+
+/* ===== Antecipação de consulta por disponibilidade do paciente (encaixe) =====
+   preferência: { consultaId, pacienteId, diasDisponiveis:[{diaSemana, faixas:[{inicio,fim}]}], dataLimite, horaLimite, ativa, encerradaMotivo }
+   oferta: { id, consultaId, pacienteId, horarioLivreId, criadaEm, expiraEm, status }
+   status da oferta: pendente | aceita | recusada | expirada | horario_indisponivel | cancelada */
+function encDH(data, hora){ return new Date(data + 'T' + (hora || '00:00') + ':00'); }
+function encLimite(p){ return encDH(p.dataLimite, p.horaLimite || '23:59'); }
+function encQuando(h){
+  const d = new Date(h.data + 'T00:00:00');
+  return `${d.toLocaleDateString('pt-BR', { weekday: 'long' })} (${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}) às ${h.hora}`;
+}
+function encPref(consultaId){ return (state.preferenciasEncaixe || []).find(p => p.consultaId === consultaId); }
+function encPendente(consultaId){ return (state.ofertasEncaixe || []).find(o => o.consultaId === consultaId && o.status === 'pendente'); }
+function encFaixaOk(pref, data, hora){ // início inclusivo, fim exclusivo (a consulta começa dentro da faixa)
+  const dia = new Date(data + 'T00:00:00').getDay();
+  const d = (pref.diasDisponiveis || []).find(x => x.diaSemana === dia);
+  return !!d && d.faixas.some(f => hora >= f.inicio && hora < f.fim);
+}
+// Regras 2–5: consulta original existe, é do paciente, está confirmada e é futura
+function encMotivoConsulta(c, pacienteId){
+  if (!c) return 'inexistente';
+  if (pacienteId != null && c.pacienteId !== pacienteId) return 'outro_paciente';
+  if (c.status !== 'confirmada') return 'nao_confirmada';
+  const h = getHorario(c.horarioId);
+  if (!h || horarioJaEncerrado(h.data, h.hora)) return 'passada';
+  return null;
+}
+// Regras 6–9 e 12: a vaga é compatível com a consulta original (mesmo profissional, mesma agenda, livre, anterior, sem conflito)
+function encMotivoVaga(c, hLivre){
+  if (!hLivre) return 'inexistente';
+  if (hLivre.status !== 'livre' || hLivre.pacienteId != null || !horarioDisponivelParaPaciente(hLivre)) return 'ocupada';
+  const hAtual = getHorario(c.horarioId);
+  if (hLivre.profissionalId !== hAtual.profissionalId) return 'outro_profissional';
+  if (hLivre.agendaId !== hAtual.agendaId) return 'outra_agenda';
+  if (encDH(hLivre.data, hLivre.hora) >= encDH(hAtual.data, hAtual.hora)) return 'nao_anterior';
+  if (horarioJaEncerrado(hLivre.data, hLivre.hora)) return 'passada';
+  if (dentroJanelaExclusividade(hLivre)) return 'exclusividade';
+  if (pacienteTemConflito(c.pacienteId, hLivre.data, hLivre.hora)) return 'conflito';
+  return null;
+}
+function encFechar(o, status, msgPaciente){
+  o.status = status; o.respondidaEm = new Date().toISOString();
+  if (msgPaciente) { notificar(o.pacienteId, 'encaixe_info', msgPaciente); state.notificacoes[0].ofertaEncaixeId = o.id; }
+}
+// Encerra preferências vencidas/inválidas e resolve ofertas expiradas, canceladas ou cuja vaga foi ocupada
+function encProcessar(){
+  const agora = Date.now();
+  (state.preferenciasEncaixe || []).forEach(p => {
+    if (!p.ativa) return;
+    if (p.dataLimite && agora > encLimite(p).getTime()) { p.ativa = false; p.encerradaMotivo = 'limite'; }
+    else if (encMotivoConsulta(state.consultas.find(x => x.id === p.consultaId), p.pacienteId)) { p.ativa = false; p.encerradaMotivo = 'consulta'; }
+  });
+  (state.ofertasEncaixe || []).forEach(o => {
+    if (o.status !== 'pendente') return;
+    const c = state.consultas.find(x => x.id === o.consultaId);
+    if (encMotivoConsulta(c, o.pacienteId)) return encFechar(o, 'cancelada');
+    if (o.expiraEm && agora >= new Date(o.expiraEm).getTime()) return encFechar(o, 'expirada', 'Essa vaga de antecipação expirou. Sua consulta original permanece mantida.');
+    const m = encMotivoVaga(c, getHorario(o.horarioLivreId));
+    if (m === 'ocupada' || m === 'inexistente') return encFechar(o, 'horario_indisponivel', 'Essa vaga já foi preenchida por outro paciente. Sua consulta original continua mantida.');
+    if (m) encFechar(o, 'cancelada');
+  });
+}
+
+// Chamada sempre que uma vaga fica livre ou é criada: gera no máximo 1 oferta pendente por consulta
+function tentarEncaixe(horarioLivreId){
+  const hLivre = getHorario(horarioLivreId);
+  if (!hLivre || hLivre.status !== 'livre') return;
+  encProcessar();
+  let criou = false;
+  (state.preferenciasEncaixe || []).forEach(pref => {
+    if (!pref.ativa) return;                                                            // Regra 1
+    const c = state.consultas.find(x => x.id === pref.consultaId);
+    if (encMotivoConsulta(c, pref.pacienteId)) return;                                  // Regras 2–5
+    if (encPendente(c.id)) return;                                                      // 1 oferta pendente por consulta
+    if (!encFaixaOk(pref, hLivre.data, hLivre.hora)) return;                            // Regras 10–11
+    if (encDH(hLivre.data, hLivre.hora) > encLimite(pref)) return;                      // Regra 13
+    if (encMotivoVaga(c, hLivre)) return;                                               // Regras 6–9 e 12
+    const agora = Date.now(), min = Number(state.configuracoes.ofertaEncaixeMin) || 120;
+    const oferta = { id: state.proximoIdOfertaEncaixe++, consultaId: c.id, pacienteId: c.pacienteId, horarioLivreId: hLivre.id,
+      criadaEm: new Date(agora).toISOString(),
+      expiraEm: new Date(Math.min(agora + min * 60000, encDH(hLivre.data, hLivre.hora).getTime())).toISOString(), status: 'pendente' };
+    state.ofertasEncaixe.push(oferta);
+    const prof = getProfissional(hLivre.profissionalId);
+    notificar(c.pacienteId, 'oferta_encaixe', `⚡ Surgiu uma vaga mais cedo com ${prof.nome} para ${encQuando(hLivre)}. Você gostaria de antecipar sua consulta? Responda até ${new Date(oferta.expiraEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}.`);
+    state.notificacoes[0].ofertaEncaixeId = oferta.id;
+    criou = true;
+  });
+  if (criou) { salvarDados(); render(); }
+}
+
+function aceitarEncaixe(ofertaId){
+  encProcessar();                                   // Etapa 2: expira/invalida ofertas antes de qualquer mudança
+  const o = (state.ofertasEncaixe || []).find(x => x.id === ofertaId);
+  const manter = ' Sua consulta original continua mantida.';
+  const sair = msg => { salvarDados(); render(); mensagemErro(msg); };
+  if (!o) return mensagemErro('Oferta não encontrada.');
+  if (state.usuario?.tipo !== 'paciente' || state.usuario.id !== o.pacienteId) return mensagemErro('Esta oferta pertence a outro paciente.');
+  if (o.status === 'expirada') return sair('Essa vaga de antecipação expirou. Sua consulta original permanece mantida.');
+  if (o.status === 'horario_indisponivel') return sair('Essa vaga já foi preenchida por outro paciente.' + manter);
+  if (o.status !== 'pendente') return sair('Essa oferta não está mais disponível.' + manter);
+  // Etapas 3–4: consulta original
+  const c = state.consultas.find(x => x.id === o.consultaId);
+  if (encMotivoConsulta(c, o.pacienteId)) { encFechar(o, 'cancelada'); return sair('Sua consulta atual não permite mais antecipação.'); }
+  // Etapas 5–6: nova vaga
+  const hL = getHorario(o.horarioLivreId), m = encMotivoVaga(c, hL);
+  if (m) {
+    const indisp = m === 'ocupada' || m === 'inexistente';
+    encFechar(o, indisp ? 'horario_indisponivel' : 'cancelada');
+    return sair((indisp ? 'Essa vaga já foi preenchida por outro paciente.' : 'Essa vaga não é mais compatível com a sua consulta.') + manter);
+  }
+  // Etapa 7: tudo validado — só agora altera o estado
+  const hAtual = getHorario(c.horarioId), antigoId = hAtual.id, prof = getProfissional(hL.profissionalId), iso = new Date().toISOString();
+  const de = encQuando(hAtual), para = encQuando(hL), nome = getPaciente(c.pacienteId)?.nome || 'O paciente';
+  hL.pacienteId = c.pacienteId; hL.status = 'ocupado';
+  c.horarioId = hL.id; c.reagendadoDe = antigoId; c.reagendadoEm = iso; c.antecipadaPorEncaixe = true;
+  state.reagendamentos[c.id] = { de: antigoId, para: hL.id, data: iso, tipoReagendamento: 'antecipacao_encaixe', ofertaId: o.id };
+  state.confirmacoes[c.id] = { status: 'confirmada', confirmadoEm: iso, via: 'antecipacao_encaixe' }; // aceitar = confirmar o novo horário
+  delete state.lembretesEnviados[lembreteChave(c, '24h')]; delete state.lembretesEnviados[lembreteChave(c, '2h')];
+  o.status = 'aceita'; o.respondidaEm = iso;
+  const pref = encPref(c.id); if (pref) { pref.ativa = false; pref.encerradaMotivo = 'antecipada'; }
+  liberarHorarioEPromover(antigoId, null);          // libera o horário antigo e promove a fila existente
+  notificar(c.pacienteId, 'reagendamento', `Sua consulta com ${prof.nome} foi antecipada de ${de} para ${para}.`);
+  notificar(null, 'reagendamento_profissional', `${nome} aceitou uma antecipação de consulta. O atendimento foi alterado de ${de} para ${para}.`, prof.id);
+  mostrarToast('Encaixe aceito! Sua consulta foi antecipada.', 'success');
+  render();
+}
+
+function recusarEncaixe(ofertaId){
+  encProcessar();
+  const o = (state.ofertasEncaixe || []).find(x => x.id === ofertaId);
+  if (!o || state.usuario?.tipo !== 'paciente' || state.usuario.id !== o.pacienteId) return;
+  if (o.status !== 'pendente') { salvarDados(); render(); return mensagemErro('Essa oferta já foi encerrada. Sua consulta original continua mantida.'); }
+  o.status = 'recusada'; o.respondidaEm = new Date().toISOString();  // consulta e preferência permanecem como estavam
+  mostrarToast('Tudo certo! Sua consulta atual foi mantida.');
+  render();
 }
 
 function encerrarFilaDoHorario(h){
@@ -1376,7 +1539,7 @@ function fazerCadastro(){
       id: state.proximoIdProfissional++, nome, email, senha, profissao,
       especialidade: especialidade || profissao,
       descricao: descricao || 'Profissional cadastrado na plataforma Fluxo.',
-      avatar: '🧑‍⚕️',
+      avatar: '🧑⚕️',
       clinicaId: clinicaEscolhida.id,
       modalidadeAtendimento: modalidadeAtendimento || 'presencial',
       localAtendimento: localAtendimento || (modalidadeAtendimento !== 'online' ? clinicaEscolhida.endereco : ''),
@@ -1437,7 +1600,7 @@ function marcarTodasNotificacoesLidas(){
 function iconeTipoNotificacao(tipo){
   const mapa = {
     confirmacao: '✅', fila: '⏳', promocao: '🎉', cancelamento: '❌',
-    lembrete: '⏰', lembrete24: '⏰', lembrete2h: '⏰', confirmacao_pendente: '⚠️', realizada: '✔️', fila_encerrada: 'ℹ️', novo_agendamento: '📌', cancelamento_profissional: '↩️', cancelamento_paciente:'❌', promocao_profissional:'🎉', alerta_faltas:'⚠️', cliente_confirmou:'✅',
+    lembrete: '⏰', lembrete24: '⏰', lembrete2h: '⏰', confirmacao_pendente: '⚠️', realizada: '✔️', fila_encerrada: 'ℹ️', novo_agendamento: '📌', cancelamento_profissional: '↩️', cancelamento_paciente:'❌', promocao_profissional:'🎉', alerta_faltas:'⚠️', cliente_confirmou:'✅', oferta_encaixe:'⚡', encaixe_info:'⚡',
   };
   return mapa[tipo] || '🔔';
 }
@@ -1445,9 +1608,24 @@ function iconeTipoNotificacao(tipo){
 function painelNotificacoes(){
   const ehPaciente = state.usuario.tipo === 'paciente';
   const minhas = state.notificacoes.filter(n => (ehPaciente ? n.pacienteId === state.usuario.id : n.profissionalId === state.usuario.id)).slice(0, 30);
-  const categoria = n => ['confirmacao_pendente','cancelamento_paciente','novo_agendamento','alerta_faltas'].includes(n.tipo) ? 'Ação necessária' : ['lembrete24','lembrete2h','fila','promocao','confirmacao'].includes(n.tipo) ? 'Atualização' : ['realizada','cancelamento','cancelamento_profissional','fila_encerrada'].includes(n.tipo) ? 'Informação' : 'Atualização';
+  const categoria = n => ['confirmacao_pendente','cancelamento_paciente','novo_agendamento','alerta_faltas','oferta_encaixe'].includes(n.tipo) ? 'Ação necessária' : ['lembrete24','lembrete2h','fila','promocao','confirmacao'].includes(n.tipo) ? 'Atualização' : ['realizada','cancelamento','cancelamento_profissional','fila_encerrada','encaixe_info'].includes(n.tipo) ? 'Informação' : 'Atualização';
   const grupos = ['Ação necessária','Atualização','Informação'].map(cat=>({cat,itens:minhas.filter(n=>categoria(n)===cat)})).filter(g=>g.itens.length);
-  return `<div class="notif-panel card shadow-lg bg-[var(--surface)]"><div class="flex items-center justify-between px-3 py-2 border-b border-[var(--line)]"><span class="font-medium text-sm">Notificações</span><button onclick="marcarTodasNotificacoesLidas()" class="text-xs text-[var(--primary)] underline underline-offset-2">Marcar todas como lidas</button></div><div class="p-2">${grupos.length?grupos.map(g=>`<div class="mb-3"><div class="notification-category px-2 pt-1">${g.cat}</div>${g.itens.map(n=>`<div class="p-3 rounded-lg text-sm ${n.lida?'bg-white':'bg-[var(--gold-bg)]'} cursor-pointer mb-1" onclick="marcarNotificacaoLida(${n.id})"><div class="flex items-start gap-2"><span>${iconeTipoNotificacao(n.tipo)}</span><div class="flex-1"><p>${escaparHtml(n.mensagem)}</p><p class="text-xs text-[var(--ink-soft)] mt-1">${new Date(n.criadaEm).toLocaleString('pt-BR')}</p>${n.consultaId&&state.confirmacoes[n.consultaId]?.status==='pendente'&&ehPaciente?'<button onclick="event.stopPropagation();confirmarConsultaPaciente('+n.consultaId+')" class="btn-primary px-2.5 py-1.5 text-xs mt-2">Confirmar consulta</button>':''}</div>${!n.lida?'<span class="w-2 h-2 rounded-full bg-[var(--brick)] mt-1 flex-shrink-0"></span>':''}</div></div>`).join('')}</div>`).join(''):'<div class="p-4 text-sm text-[var(--ink-soft)]">Sem notificações por enquanto.</div>'}</div></div>`;
+  return `<div class="notif-panel card shadow-lg bg-[var(--surface)]"><div class="flex items-center justify-between px-3 py-2 border-b border-[var(--line)]"><span class="font-medium text-sm">Notificações</span><button onclick="marcarTodasNotificacoesLidas()" class="text-xs text-[var(--primary)] underline underline-offset-2">Marcar todas como lidas</button></div><div class="p-2">${grupos.length?grupos.map(g=>`<div class="mb-3"><div class="notification-category px-2 pt-1">${g.cat}</div>${g.itens.map(n=>{
+    let acoes = '';
+    if (n.consultaId && state.confirmacoes[n.consultaId]?.status==='pendente' && ehPaciente) {
+      acoes = '<button onclick="event.stopPropagation();confirmarConsultaPaciente('+n.consultaId+')" class="btn-primary px-2.5 py-1.5 text-xs mt-2">Confirmar consulta</button>';
+    }
+    if (n.ofertaEncaixeId) {
+      const oferta = (state.ofertasEncaixe || []).find(o => o.id === n.ofertaEncaixeId);
+      const fim = { aceita: 'Aceito. Consulta antecipada.', recusada: 'Você manteve a consulta atual.', expirada: 'Oferta expirada. Consulta original mantida.', horario_indisponivel: 'Vaga preenchida. Consulta original mantida.', cancelada: 'Oferta cancelada. Consulta original mantida.' };
+      if (oferta && oferta.status === 'pendente') {
+        acoes = `<div class="flex gap-2 mt-2 flex-wrap"><button onclick="event.stopPropagation();aceitarEncaixe(${oferta.id})" class="btn-primary px-2.5 py-1.5 text-xs">ACEITAR ENCAIXE</button><button onclick="event.stopPropagation();recusarEncaixe(${oferta.id})" class="btn-ghost px-2.5 py-1.5 text-xs">MANTER CONSULTA ATUAL</button></div>`;
+      } else if (oferta && fim[oferta.status] && n.tipo === 'oferta_encaixe') {
+        acoes = `<div class="mt-2 text-xs text-[var(--ink-soft)] font-medium">${fim[oferta.status]}</div>`;
+      }
+    }
+    return `<div class="p-3 rounded-lg text-sm ${n.lida?'bg-white':'bg-[var(--gold-bg)]'} cursor-pointer mb-1" onclick="marcarNotificacaoLida(${n.id})"><div class="flex items-start gap-2"><span>${iconeTipoNotificacao(n.tipo)}</span><div class="flex-1"><p>${escaparHtml(n.mensagem)}</p><p class="text-xs text-[var(--ink-soft)] mt-1">${new Date(n.criadaEm).toLocaleString('pt-BR')}</p>${acoes}</div>${!n.lida?'<span class="w-2 h-2 rounded-full bg-[var(--brick)] mt-1 flex-shrink-0"></span>':''}</div></div>`;
+  }).join('')}</div>`).join(''):'<div class="p-4 text-sm text-[var(--ink-soft)]">Sem notificações por enquanto.</div>'}</div></div>`;
 }
 
 
@@ -1663,7 +1841,7 @@ function telaClinica(){
         <div class="space-y-2">
           ${medicos.length ? medicos.map(m => `<div class="card bg-white p-4 flex items-center justify-between gap-3 flex-wrap">
             <div class="flex items-center gap-3">
-              <div class="avatar-circle" style="width:44px;height:44px;font-size:1.3rem;">${m.avatar || '🧑‍⚕️'}</div>
+              <div class="avatar-circle" style="width:44px;height:44px;font-size:1.3rem;">${m.avatar || '🧑⚕️'}</div>
               <div>
                 <div class="font-medium">${escaparHtml(m.nome)}</div>
                 <div class="text-xs text-[var(--ink-soft)]">${escaparHtml(m.especialidade || m.profissao)}</div>
@@ -1797,7 +1975,7 @@ function cartaoProfissional(p){
     : (modalidade === 'online' ? '💻 Online' : '📍 Presencial');
   return `
     <div class="card p-5 hover:border-[var(--primary)] cursor-pointer transition flex gap-4" onclick="selecionarProfissional(${p.id})">
-      <div class="avatar-circle">${p.avatar || '🧑‍⚕️'}</div>
+      <div class="avatar-circle">${p.avatar || '🧑⚕️'}</div>
       <div class="flex-1">
         <h3 class="font-display text-xl text-[var(--primary-dark)]">${p.nome}</h3>
         <p class="text-sm text-[var(--ink-soft)] mt-0.5">${p.especialidade || p.profissao}</p>
@@ -1894,7 +2072,7 @@ function telaPacientePerfil(){
 
       <div class="card p-6 bg-white">
         <div class="flex gap-4 items-start">
-          <div class="avatar-circle" style="width:76px;height:76px;font-size:2.1rem;">${p.avatar || '🧑‍⚕️'}</div>
+          <div class="avatar-circle" style="width:76px;height:76px;font-size:2.1rem;">${p.avatar || '🧑⚕️'}</div>
           <div>
             <h2 class="font-display text-2xl text-[var(--primary-dark)]">${p.nome}</h2>
             <p class="text-sm text-[var(--ink-soft)]">${p.profissao}</p>
@@ -2018,11 +2196,12 @@ function linhaConsultaPaciente(c, permitirCancelar){
         <div class="text-xs text-[var(--ink-soft)]">${prof.especialidade || prof.profissao}</div>
         <div class="text-sm text-[var(--ink-soft)] tabular mt-1">${formatarDataCurta(c.h.data)} · ${c.h.hora} · ${c.h.modalidade === 'online' ? '💻 Online' : '📍 Presencial'}</div>
         ${pend ? `<div class="text-xs text-[var(--brick)] mt-1">⚠️ Confirme até ${formatarPrazoConfirmacao(c.h)} ou sua vaga poderá passar para a fila de espera.</div>` : ''}
+        ${encStatusHtml(c)}
         ${ehFila ? `<div class="text-xs text-[var(--ink-soft)] mt-1">${textoFila(c.h)} Pode sair da fila quando quiser, sem custo.</div>` : ''}
       </div>
       <div class="flex items-center gap-2 flex-wrap justify-end">
         <span class="badge ${pend?'badge-lotado':classe}">${pend?'Aguardando confirmação':label}</span>
-        ${c.status === 'confirmada' ? `<button onclick="abrirReagendamento(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">🔄 Reagendar</button><button onclick="simularLembrete(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">⏰ Lembrete</button>${state.confirmacoes[c.id]?.status==='pendente' ? `<button onclick="confirmarConsultaPaciente(${c.id})" class="btn-primary px-3 py-1.5 text-xs font-medium">Confirmar consulta</button>` : ''}` : ''}
+        ${c.status === 'confirmada' ? `<button onclick="abrirConfiguracaoEncaixe(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">⚡ ${encPref(c.id)?.ativa ? 'Editar antecipação' : 'Antecipar vaga'}</button><button onclick="abrirReagendamento(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">🔄 Reagendar</button><button onclick="simularLembrete(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">⏰ Lembrete</button>${state.confirmacoes[c.id]?.status==='pendente' ? `<button onclick="confirmarConsultaPaciente(${c.id})" class="btn-primary px-3 py-1.5 text-xs font-medium">Confirmar consulta</button>` : ''}` : ''}
         ${permitirCancelar ? `<button onclick="abrirModalCancelamento(${c.id})" class="btn-brick px-3 py-1.5 text-xs font-medium">${ehFila ? 'Sair da fila' : 'Cancelar consulta'}</button>` : ''}<button onclick="abrirDetalheConsulta(${c.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium">Detalhes</button>
       </div>
     </div>`;
@@ -2043,6 +2222,166 @@ function modalConfirmarCancelamento(){
         </div>
       </div>
     </div>`;
+}
+
+let encDraft = null;
+const ENC_DIAS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+function abrirConfiguracaoEncaixe(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId), h = c && getHorario(c.horarioId);
+  if (!c || !h || c.status !== 'confirmada') return mensagemErro('Só é possível antecipar uma consulta confirmada.');
+  const p = encPref(consultaId);
+  encDraft = { consultaId, ativa: !!p?.ativa, dias: p ? JSON.parse(JSON.stringify(p.diasDisponiveis)) : [], dataLimite: p?.dataLimite || h.data, horaLimite: p?.horaLimite || '' };
+  encDesenhar();
+}
+function encDesenhar(){
+  const d = encDraft, c = state.consultas.find(x => x.id === d.consultaId), h = getHorario(c.horarioId), prof = getProfissional(h.profissionalId);
+  const rolagem = document.getElementById('enc-scroll')?.scrollTop || 0;
+  document.getElementById('modal-encaixe')?.remove();
+  const blocos = ENC_DIAS.map((nome, i) => {
+    const sel = d.dias.find(x => x.diaSemana === i);
+    const faixas = sel ? sel.faixas.map((f, j) => `<div class="flex items-center gap-2 mt-2"><input type="time" value="${f.inicio}" onchange="encEditar(${i},${j},'inicio',this.value)" class="border rounded p-1.5 flex-1 min-w-0"><span class="text-[var(--ink-soft)]">→</span><input type="time" value="${f.fim}" onchange="encEditar(${i},${j},'fim',this.value)" class="border rounded p-1.5 flex-1 min-w-0"><button type="button" onclick="encRemoverFaixa(${i},${j})" class="btn-ghost px-2 py-1 text-xs">Remover</button></div>`).join('')
+      + `<button type="button" onclick="encAddFaixa(${i})" class="btn-ghost px-2 py-1 text-xs mt-2">+ Adicionar faixa</button>` : '';
+    return `<div class="border border-[var(--line)] rounded-lg p-2.5"><label class="flex items-center gap-2 font-medium cursor-pointer"><input type="checkbox" ${sel ? 'checked' : ''} onchange="encToggleDia(${i})"> ${nome}</label>${faixas}</div>`;
+  }).join('');
+  const modal = document.createElement('div');
+  modal.id = 'modal-encaixe'; modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="card bg-white p-5 max-w-md w-full max-h-[90vh] overflow-y-auto" id="enc-scroll">
+      <h3 class="font-display text-lg mb-1">⚡ Antecipar vaga</h3>
+      <p class="text-xs text-[var(--ink-soft)] mb-1">Consulta atual: <strong>${escaparHtml(prof.nome)}</strong> · ${encQuando(h)}</p>
+      <p class="text-sm text-[var(--ink-soft)] mb-3">Se surgir uma vaga mais cedo nos dias e horários abaixo, o Fluxo avisa você.</p>
+      ${d.ativa ? '<div class="text-xs font-medium text-[var(--gold)] mb-3">⚡ Antecipação ativa — você pode editar ou desativar.</div>' : ''}
+      <div class="space-y-2 text-sm">${blocos}</div>
+      <div class="grid grid-cols-2 gap-2 mt-4 text-sm">
+        <div><label class="block font-medium mb-1">Aceito antecipar até</label><input type="date" value="${d.dataLimite}" min="${hojeISO()}" max="${h.data}" onchange="encDraft.dataLimite=this.value" class="w-full border rounded p-1.5"></div>
+        <div><label class="block font-medium mb-1">Hora limite <span class="font-normal text-[var(--ink-soft)]">(opcional)</span></label><input type="time" value="${d.horaLimite}" onchange="encDraft.horaLimite=this.value" class="w-full border rounded p-1.5"></div>
+      </div>
+      <div class="flex gap-3 mt-5">
+        <button onclick="encFecharModal()" class="btn-ghost flex-1 py-2 text-sm font-medium">Cancelar</button>
+        <button onclick="salvarConfiguracaoEncaixe(${d.consultaId})" class="btn-primary flex-1 py-2 text-sm font-medium">Salvar antecipação</button>
+      </div>
+      ${d.ativa ? `<button onclick="desativarEncaixe(${d.consultaId})" class="btn-brick w-full mt-2 py-2 text-sm font-medium">Desativar antecipação</button>` : ''}
+    </div>`;
+  document.body.appendChild(modal);
+  const box = document.getElementById('enc-scroll'); if (box) box.scrollTop = rolagem;
+}
+function encFecharModal(){ encDraft = null; document.getElementById('modal-encaixe')?.remove(); }
+function encToggleDia(i){
+  const d = encDraft, k = d.dias.findIndex(x => x.diaSemana === i);
+  if (k >= 0) d.dias.splice(k, 1); else d.dias.push({ diaSemana: i, faixas: [{ inicio: '08:00', fim: '12:00' }] });
+  d.dias.sort((a, b) => a.diaSemana - b.diaSemana); encDesenhar();
+}
+function encAddFaixa(i){ encDraft.dias.find(x => x.diaSemana === i).faixas.push({ inicio: '14:00', fim: '18:00' }); encDesenhar(); }
+function encRemoverFaixa(i, j){
+  const d = encDraft, x = d.dias.find(y => y.diaSemana === i);
+  x.faixas.splice(j, 1); if (!x.faixas.length) d.dias.splice(d.dias.indexOf(x), 1);
+  encDesenhar();
+}
+function encEditar(i, j, campo, v){ encDraft.dias.find(x => x.diaSemana === i).faixas[j][campo] = v; }
+
+function salvarConfiguracaoEncaixe(consultaId){
+  const d = encDraft, c = state.consultas.find(x => x.id === consultaId), h = c && getHorario(c.horarioId);
+  if (!d || d.consultaId !== consultaId || !c || !h) return;
+  if (c.status !== 'confirmada') return mensagemErro('Só é possível antecipar uma consulta confirmada.');
+  const dias = d.dias.filter(x => x.faixas.length).map(x => ({ diaSemana: x.diaSemana, faixas: x.faixas.map(f => ({ inicio: f.inicio, fim: f.fim })).sort((a, b) => a.inicio.localeCompare(b.inicio)) }));
+  if (!dias.length) return mensagemErro('Escolha ao menos um dia e uma faixa de horário.');
+  for (const x of dias) for (let k = 0; k < x.faixas.length; k++) {
+    const f = x.faixas[k];
+    if (!f.inicio || !f.fim || f.inicio >= f.fim) return mensagemErro(`${ENC_DIAS[x.diaSemana]}: o horário inicial deve ser menor que o final.`);
+    if (k && f.inicio < x.faixas[k - 1].fim) return mensagemErro(`${ENC_DIAS[x.diaSemana]}: as faixas não podem se sobrepor.`);
+  }
+  if (!d.dataLimite) return mensagemErro('Informe a data limite.');
+  if (d.dataLimite > h.data) return mensagemErro('A data limite não pode ser depois da consulta atual.');
+  if (encLimite({ dataLimite: d.dataLimite, horaLimite: d.horaLimite }).getTime() <= Date.now()) return mensagemErro('A data/hora limite precisa estar no futuro.');
+  const antiga = encPref(consultaId), iso = new Date().toISOString();
+  const nova = { consultaId, pacienteId: c.pacienteId, diasDisponiveis: dias, dataLimite: d.dataLimite, horaLimite: d.horaLimite || '', ativa: true, criadaEm: antiga?.criadaEm || iso, atualizadaEm: iso };
+  if (!state.preferenciasEncaixe) state.preferenciasEncaixe = [];
+  const idx = state.preferenciasEncaixe.findIndex(p => p.consultaId === consultaId);
+  if (idx >= 0) state.preferenciasEncaixe[idx] = nova; else state.preferenciasEncaixe.push(nova);
+  encFecharModal();
+  mostrarToast('Antecipação ativada. Avisaremos se surgir uma vaga mais cedo.', 'success');
+  render();
+}
+function desativarEncaixe(consultaId){
+  const p = encPref(consultaId);
+  if (p) { p.ativa = false; p.encerradaMotivo = 'manual'; }
+  (state.ofertasEncaixe || []).filter(o => o.consultaId === consultaId && o.status === 'pendente').forEach(o => encFechar(o, 'cancelada'));
+  encFecharModal();
+  mostrarToast('Antecipação desativada.');
+  render();
+}
+function encStatusHtml(c){
+  if (c.status !== 'confirmada') return '';
+  const p = encPref(c.id), cls = 'text-xs mt-1 font-medium text-[var(--gold)]';
+  if (encPendente(c.id)) return `<div class="${cls}">⚡ Surgiu uma vaga mais cedo! Responda na área de notificações.</div>`;
+  if (p?.ativa) return `<div class="${cls}">⚡ Antecipação ativa: você está aguardando uma vaga mais cedo (até ${new Date(p.dataLimite + 'T00:00:00').toLocaleDateString('pt-BR')}${p.horaLimite ? ' às ' + p.horaLimite : ''}).</div>`;
+  if (p?.encerradaMotivo === 'manual') return '<div class="text-xs mt-1 text-[var(--ink-soft)]">Antecipação desativada.</div>';
+  if (p?.encerradaMotivo === 'limite') return '<div class="text-xs mt-1 text-[var(--ink-soft)]">Antecipação encerrada: a data limite foi atingida.</div>';
+  if (c.antecipadaPorEncaixe) return `<div class="${cls}">⚡ Consulta antecipada pelo encaixe por disponibilidade.</div>`;
+  return '';
+}
+
+/* ===== Demonstração e testes (rode no console do navegador: demoEncaixe() e testeEncaixe()) ===== */
+function encProximoDia(diaSemana, aPartirDe){ let d = aPartirDe; while (new Date(d + 'T00:00:00').getDay() !== diaSemana) d = adicionarDiasISO(d, 1); return d; }
+// Cenário: Maria, Dr. João, agenda "Convênio A", consulta na sexta 15:00; disponível ter 08–12 e qua 14–18, até quinta
+function demoEncaixe(){
+  let maria = state.pacientes.find(p => p.email === 'maria@email.com');
+  if (!maria) { maria = { id: state.proximoIdPaciente++, nome: 'Maria Souza', email: 'maria@email.com', senha: '123' }; state.pacientes.push(maria); }
+  let ag = state.agendas.find(a => a.profissionalId === 2 && a.nome === 'Convênio A');
+  if (!ag) { ag = { id: state.proximoIdAgenda++, profissionalId: 2, nome: 'Convênio A', criadaEm: new Date().toISOString(), prioridade: 2 }; state.agendas.push(ag); }
+  const sexta = encProximoDia(5, hojeISO(7)), ter = adicionarDiasISO(sexta, -3), qua = adicionarDiasISO(sexta, -2), qui = adicionarDiasISO(sexta, -1);
+  let hs = state.horarios.find(h => h.profissionalId === 2 && h.agendaId === ag.id && h.data === sexta && h.hora === '15:00');
+  if (!hs) { adicionarHorarioPorData(2, sexta, '15:00', 'presencial', ag.id); hs = state.horarios[state.horarios.length - 1]; }
+  if (hs.status === 'livre') agendar(maria.id, hs.id, { silencioso: true });
+  const c = state.consultas.find(x => x.horarioId === hs.id && x.pacienteId === maria.id && x.status === 'confirmada');
+  state.preferenciasEncaixe = state.preferenciasEncaixe.filter(p => p.consultaId !== c.id);
+  state.preferenciasEncaixe.push({ consultaId: c.id, pacienteId: maria.id, diasDisponiveis: [
+    { diaSemana: 2, faixas: [{ inicio: '08:00', fim: '12:00' }] }, { diaSemana: 3, faixas: [{ inicio: '14:00', fim: '18:00' }] }],
+    dataLimite: qui, horaLimite: '', ativa: true, criadaEm: new Date().toISOString() });
+  salvarDados(); render();
+  console.log('Demo pronta. Entre como maria@email.com / 123 (paciente) e veja "Minhas consultas".');
+  return { maria, ag, c, hs, sexta, ter, qua, qui };
+}
+function testeEncaixe(){
+  const bak = JSON.stringify(state), res = [];
+  const ok = (nome, cond) => res.push({ teste: nome, resultado: cond ? 'OK' : 'FALHOU' });
+  try {
+    const x = demoEncaixe(), c = x.c, geral = agendaPadraoId(2);
+    state.usuario = { tipo: 'paciente', id: x.maria.id, nome: x.maria.nome };
+    const pref = encPref(c.id);
+    const pend = () => state.ofertasEncaixe.filter(o => o.consultaId === c.id && o.status === 'pendente');
+    const vaga = (data, hora, ag = x.ag.id) => { const r = adicionarHorarioPorData(2, data, hora, 'presencial', ag); if (!r.ok) throw new Error('vaga não criada ' + data + hora); const h = state.horarios[state.horarios.length - 1]; tentarEncaixe(h.id); return h; };
+    vaga(x.ter, '10:00');                    ok('T1 terça 10:00 gera oferta', pend().length === 1);
+    vaga(x.ter, '11:00');                    ok('T2 segunda vaga não cria 2ª oferta pendente', pend().length === 1 && state.ofertasEncaixe.length === 1);
+    recusarEncaixe(pend()[0].id);            ok('T3 recusar mantém consulta e preferência ativa', c.horarioId === x.hs.id && pref.ativa && state.ofertasEncaixe[0].status === 'recusada');
+    vaga(x.ter, '15:00');                    ok('T4 terça 15:00 (fora da faixa) não gera', pend().length === 0);
+    vaga(x.qua, '10:00');                    ok('T5 quarta 10:00 (fora da faixa) não gera', pend().length === 0);
+    vaga(x.sexta, '16:00');                  ok('T6 sexta 16:00 (depois da consulta) não gera', pend().length === 0);
+    vaga(x.ter, '09:00', geral);             ok('T7 outra agenda/convênio não gera', pend().length === 0);
+    const q15 = vaga(x.qua, '15:00');        ok('T8 quarta 15:00 gera nova oferta após recusa', pend().length === 1);
+    const o2 = pend()[0]; agendar(1, q15.id, { silencioso: true }); aceitarEncaixe(o2.id);
+    ok('T9 vaga ocupada antes de aceitar: oferta indisponível e consulta intacta', o2.status === 'horario_indisponivel' && c.horarioId === x.hs.id && c.status === 'confirmada');
+    pref.diasDisponiveis.push({ diaSemana: 5, faixas: [{ inicio: '08:00', fim: '18:00' }] }); pref.dataLimite = x.sexta;
+    vaga(x.sexta, '16:00');                  ok('T10 sexta 16:00 não gera (estritamente anterior)', pend().length === 0);
+    vaga(x.sexta, '14:00');                  ok('T11 sexta 14:00 gera (anterior à consulta)', pend().length === 1);
+    recusarEncaixe(pend()[0].id); pref.diasDisponiveis.pop(); pref.dataLimite = x.qui;
+    vaga(x.ter, '08:30'); const o3 = pend()[0]; o3.expiraEm = new Date(Date.now() - 1000).toISOString(); aceitarEncaixe(o3.id);
+    ok('T12 oferta expirada: consulta original mantida', o3.status === 'expirada' && c.horarioId === x.hs.id && c.status === 'confirmada');
+    pref.dataLimite = adicionarDiasISO(x.ter, -1); vaga(x.ter, '08:15');
+    ok('T13 vaga depois da data limite não gera', pend().length === 0);
+    pref.dataLimite = adicionarDiasISO(hojeISO(), -1); encProcessar(); ok('T14 data limite vencida desativa a preferência', pref.ativa === false);
+    pref.ativa = true; pref.dataLimite = x.qui; delete pref.encerradaMotivo;
+    agendar(2, x.hs.id, { silencioso: true });   // Pedro entra na fila do horário antigo
+    const nova = vaga(x.ter, '09:15'); aceitarEncaixe(pend()[0].id);
+    ok('T15 aceitar move a consulta para o novo horário', c.horarioId === nova.id && nova.pacienteId === x.maria.id && nova.status === 'ocupado');
+    ok('T16 horário antigo liberado e fila promovida', getHorario(x.hs.id).pacienteId === 2 && getHorario(x.hs.id).status === 'ocupado');
+    ok('T17 histórico e preferência desativada', state.reagendamentos[c.id]?.tipoReagendamento === 'antecipacao_encaixe' && pref.ativa === false);
+    ok('T18 profissional notificado', state.notificacoes.some(n => n.profissionalId === 2 && /aceitou uma antecipação/.test(n.mensagem)));
+    ok('T19 persistência (JSON)', !!JSON.parse(JSON.stringify(state)).ofertasEncaixe.length);
+  } catch (e) { res.push({ teste: 'ERRO', resultado: String(e.stack || e) }); }
+  finally { state = JSON.parse(bak); salvarDados(); render(); }
+  console.table(res);
+  return res;
 }
 
 function telaPacienteConsultas(){
@@ -2456,7 +2795,7 @@ function telaProfissional(){
         <button onclick="salvarConfiguracoesAgenda()" class="btn-primary px-4 py-2 text-sm mt-4">Salvar regras</button>
       </div>
 
-      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑‍⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado na plataforma Fluxo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`★ ${r.media.toFixed(1)} (${r.quantidade})`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${aval.length?aval.slice().reverse().slice(0,5).map(a=>`<div class="border-t border-[var(--line)] py-2 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong> · ${escaparHtml(a.paciente?.nome||'Paciente')}${a.comentario?`<div class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</div>`:''}</div>`).join(''):'<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
+      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado na plataforma Fluxo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`★ ${r.media.toFixed(1)} (${r.quantidade})`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${aval.length?aval.slice().reverse().slice(0,5).map(a=>`<div class="border-t border-[var(--line)] py-2 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong> · ${escaparHtml(a.paciente?.nome||'Paciente')}${a.comentario?`<div class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</div>`:''}</div>`).join(''):'<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
 
   const conteudoAba = abaProfissional === 'agenda' ? conteudoAgenda : abaProfissional === 'config' ? conteudoConfig : conteudoPainel;
 
