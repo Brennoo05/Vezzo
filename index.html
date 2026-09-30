@@ -3,226 +3,168 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Fluxo de Consulta</title>
+<title>Vezzo — Chegou a sua vez.</title>
+<meta name="theme-color" content="#F5F7FA" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%228%22 fill=%22%230B7A6C%22/%3E%3Cpath d=%22M6 9l8.5 17L22 12%22 fill=%22none%22 stroke=%22%23fff%22 stroke-width=%223%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3Ccircle cx=%2224.5%22 cy=%228%22 r=%223%22 fill=%22%23fff%22/%3E%3C/svg%3E" />
 
 
 
 <script src="https://cdn.tailwindcss.com"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
 <style>
   :root{
-    --bg:#f4f6f8;
-    --bg-soft:#eceff2;
-    --surface:#ffffff;
-    --surface-hover:#f8fafc;
-    --ink:#1f2937;
-    --ink-soft:#6b7280;
-    --primary:#2f8f7f;
-    --primary-dark:#256f63;
-    --primary-glow:rgba(47,143,127,.16);
-    --gold:#2f9e6e;
-    --gold-bg:rgba(47,158,110,.12);
-    --brick:#d9534f;
-    --brick-bg:rgba(217,83,79,.1);
-    --line:rgba(31,41,55,.1);
-    --line-soft:rgba(31,41,55,.05);
-    --radius-sm:8px;
-    --radius-md:12px;
-    --radius-lg:16px;
-    --shadow-sm:0 1px 2px rgba(31,41,55,.06), 0 1px 3px rgba(31,41,55,.08);
-    --shadow-md:0 4px 10px rgba(31,41,55,.08);
-    --shadow-lg:0 12px 28px rgba(31,41,55,.12);
+    --bg:#F5F7FA; --surface:#FFFFFF; --surface-2:#EEF2F6;
+    --ink:#1B2430; --ink-soft:#5B6675;
+    --primary:#0B7A6C; --primary-dark:#085F54; --primary-glow:rgba(11,122,108,.18);
+    --blue:#2563EB; --violet:#6D4AE0;
+    --success:#15803D; --warn:#B45309; --danger:#C62D3F;
+    --line:#E3E8EF; --line-soft:#EEF1F5;
+    --bg-soft:var(--surface-2); --surface-hover:#F8FAFC;
+    --gold:var(--success); --gold-bg:rgba(21,128,61,.10);
+    --brick:var(--danger); --brick-bg:rgba(198,45,63,.08);
+    --radius-sm:8px; --radius-md:10px; --radius-lg:14px;
+    --shadow-sm:0 1px 2px rgba(16,24,40,.05); --shadow-md:0 4px 12px rgba(16,24,40,.08); --shadow-lg:0 12px 32px rgba(16,24,40,.14);
+    color-scheme:light;
   }
   *{ box-sizing:border-box; }
-  html{ scroll-behavior:smooth; overflow-x:hidden; }
-  body{
-    background:var(--bg);
-    color:var(--ink);
-    font-family:'Inter', sans-serif;
-    letter-spacing:-.01em;
-    -webkit-font-smoothing:antialiased;
-    margin:0; min-width:0; min-height:100vh; overflow-x:hidden;
+  html{ scroll-behavior:smooth; overflow-x:hidden; background:var(--bg); }
+  body{ background:var(--bg);
+    color:var(--ink); font-family:'Inter',sans-serif; letter-spacing:-.005em;
+    -webkit-font-smoothing:antialiased; margin:0; min-width:0; min-height:100vh; overflow-x:hidden;
   }
-  h1,h2,h3,.font-display{ font-family:'Outfit', sans-serif; letter-spacing:-.02em; }
-  .tabular{ font-variant-numeric: tabular-nums; }
+  body::before{ display:none; }
+  h1,h2,h3,.font-display{ font-family:'Inter',sans-serif; letter-spacing:-.02em; font-weight:600; }
+  .tabular,.stat-num,.cal-cell,.queue-chip,.notif-dot{ font-variant-numeric:tabular-nums; }
+  .stat-num,.queue-chip,.tabular{  }
   a,button,[role="button"],input,select,textarea{ outline-offset:2px; }
-  button:focus-visible,[role="button"]:focus-visible,a:focus-visible{ outline:2px solid var(--primary); outline-offset:2px; border-radius:8px; }
-  input:focus-visible,select:focus-visible,textarea:focus-visible{ outline:none; border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-glow); }
-  input,select,textarea{ font:inherit; transition:border-color .15s ease, box-shadow .15s ease; }
+  button:focus-visible,[role="button"]:focus-visible,a:focus-visible,.cal-cell:focus-visible{ outline:2px solid var(--primary); outline-offset:2px; border-radius:10px; }
+  input:focus-visible,select:focus-visible,textarea:focus-visible{ outline:none; border-color:var(--primary) !important; box-shadow:0 0 0 3px rgba(11,122,108,.18); }
+  input,select,textarea{ font:inherit; transition:border-color .2s ease, box-shadow .2s ease; }
   input:not([type=checkbox]):not([type=radio]),select,textarea{
-    background:#ffffff !important; border:1px solid var(--line) !important; color:var(--ink) !important;
+    background-color:var(--surface) !important; border:1px solid var(--line) !important; color:var(--ink) !important; border-radius:var(--radius-md);
   }
-  input:not([type=checkbox]):not([type=radio]):not([type=date]):not([type=time]),
-  select{ min-height:42px; }
-  input[type=checkbox],input[type=radio]{ width:16px; height:16px; accent-color:var(--primary); }
-  select{
-    appearance:none;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
-    background-repeat:no-repeat; background-position:right .75rem center; background-size:1em; padding-right:2.5rem;
-  }
-  select option{ background:var(--bg-soft); color:var(--ink); }
+  input::placeholder,textarea::placeholder{ color:#7A8494; }
+  input:not([type=checkbox]):not([type=radio]):not([type=date]):not([type=time]),select{ min-height:44px; }
+  input[type=date],input[type=time]{ color-scheme:light; min-height:44px; }
+  input[type=checkbox],input[type=radio]{ width:18px; height:18px; accent-color:var(--primary); }
+  select{ appearance:none; -webkit-appearance:none; background-image:none !important; padding-right:.75rem; }
+  select option{ background:var(--surface); color:var(--ink); }
   button,input,select,textarea{ max-width:100%; }
   button{ touch-action:manipulation; }
   img,svg{ max-width:100%; }
   .sr-only{ position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+  #app{ position:relative; z-index:1; }
 
   .card{
-    background:var(--surface) !important;
-    border:1px solid var(--line) !important;
-    border-radius:var(--radius-lg);
-    box-shadow:var(--shadow-sm);
+    background:var(--surface) !important; border:1px solid var(--line) !important; border-radius:var(--radius-lg); box-shadow:none;
     transition:box-shadow .2s ease, border-color .2s ease, transform .2s ease;
   }
   a.card:hover,.card.is-interactive:hover,.card[onclick]:hover{
-    box-shadow:var(--shadow-md);
-    border-color:rgba(47,143,127,.35) !important;
-    transform:translateY(-1px);
-    background:var(--surface-hover) !important;
+    border-color:rgba(11,122,108,.45) !important; background:var(--surface-hover) !important;
   }
 
   .btn-primary,.btn-ghost,.btn-brick{
-    display:inline-flex; align-items:center; justify-content:center; gap:.45rem;
-    font-weight:500; letter-spacing:.005em; cursor:pointer; font-family:'Outfit', sans-serif;
-    transition:all .2s ease;
+    display:inline-flex; align-items:center; justify-content:center; gap:.45rem; min-height:44px;
+    font-weight:600; letter-spacing:.005em; cursor:pointer; font-family:'Inter',sans-serif; transition:all .2s ease;
   }
   .btn-primary:active,.btn-ghost:active,.btn-brick:active{ transform:scale(.97); }
-  .btn-primary{
-    background:var(--primary); color:#fff;
-    border-radius:var(--radius-md); box-shadow:none; border:none;
-  }
-  .btn-primary:hover{ background:var(--primary-dark); }
-  .btn-primary:disabled{ opacity:.6; cursor:not-allowed; transform:none; box-shadow:none; }
-  .btn-ghost{ background:#fff; border:1px solid var(--line); color:var(--ink); border-radius:var(--radius-md); }
-  .btn-ghost:hover{ border-color:var(--primary); color:var(--primary-dark); background:var(--bg-soft); }
-  .btn-brick{ background:var(--brick-bg); border:1px solid rgba(217,83,79,.3); color:var(--brick); border-radius:var(--radius-md); }
-  .btn-brick:hover{ background:rgba(217,83,79,.18); border-color:rgba(217,83,79,.5); color:#b93430; }
-  .badge{ font-size:.7rem; font-weight:600; padding:.25rem .6rem; border-radius:999px; letter-spacing:.01em; display:inline-flex; align-items:center; gap:.3rem; white-space:nowrap; font-family:'Outfit', sans-serif; border:1px solid transparent; }
-  .badge-livre{ background:var(--gold-bg); color:var(--gold); border-color:rgba(52,211,153,.3); }
-  .badge-ocupado{ background:var(--primary-glow); color:var(--primary); border-color:rgba(56,189,248,.3); }
-  .badge-lotado{ background:rgba(245,158,11,.15); color:#fbbf24; border-color:rgba(245,158,11,.3); }
-  .badge-concluido{ background:rgba(255,255,255,.1); color:var(--ink-soft); border-color:rgba(255,255,255,.2); }
+  .btn-primary{ background:var(--primary); color:#fff; border:none; border-radius:var(--radius-md); box-shadow:none; }
+  .btn-primary:hover{ background:var(--primary-dark); filter:none; }
+  .btn-primary:disabled{ opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; filter:none; }
+  .btn-ghost{ background:var(--surface); border:1px solid #CBD3DE; color:var(--ink); border-radius:var(--radius-md); }
+  .btn-ghost:hover{ border-color:var(--primary); color:var(--primary-dark); background:var(--surface-hover); }
+  .btn-brick{ background:var(--brick-bg); border:1px solid rgba(198,45,63,.3); color:var(--danger); border-radius:var(--radius-md); }
+  .btn-brick:hover{ background:rgba(198,45,63,.14); border-color:rgba(198,45,63,.5); color:#A11F31; }
 
-  .queue-chip{
-    width:28px; height:28px; border-radius:999px; background:rgba(245,158,11,.15);
-    color:#fbbf24; font-size:.75rem; font-weight:600;
-    display:flex; align-items:center; justify-content:center; border:1px solid rgba(245,158,11,.3);
-  }
-  .cal-cell{
-    width:36px; height:36px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center;
-    font-size:.85rem; cursor:pointer; position:relative; transition:all .15s ease; border:1px solid transparent;
-  }
-  .cal-cell:hover{ background:rgba(255,255,255,.08); }
+  .badge{ font-size:.7rem; font-weight:600; padding:.25rem .6rem; border-radius:999px; display:inline-flex; align-items:center; gap:.3rem; white-space:nowrap; font-family:'Inter',sans-serif; border:1px solid transparent; }
+  .badge-livre{ background:rgba(21,128,61,.1); color:#14692F; border-color:rgba(21,128,61,.25); }
+  .badge-ocupado{ background:rgba(37,99,235,.09); color:#1D4FBF; border-color:rgba(37,99,235,.25); }
+  .badge-lotado{ background:rgba(180,83,9,.1); color:#9A4507; border-color:rgba(180,83,9,.28); }
+  .badge-concluido{ background:var(--surface-2); color:var(--ink-soft); border-color:var(--line); }
+  
+  .queue-chip{ width:30px; height:30px; border-radius:999px; background:rgba(180,83,9,.1); color:#9A4507; font-size:.78rem; font-weight:600; display:flex; align-items:center; justify-content:center; border:1px solid rgba(180,83,9,.28); }
+  .cal-cell{ width:36px; height:36px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; font-size:.85rem; cursor:pointer; position:relative; transition:all .15s ease; border:1px solid transparent; }
+  .cal-cell:hover{ background:rgba(11,122,108,.08); }
   .cal-cell.selected{ background:var(--primary); color:#fff; font-weight:700; }
   .cal-cell.today{ font-weight:700; border-color:var(--primary); color:var(--primary-dark); }
   .cal-dot{ position:absolute; bottom:4px; width:4px; height:4px; border-radius:999px; background:var(--primary); }
-  .cal-cell.selected .cal-dot{ background:#fff; box-shadow:none; }
-  .cal-cell.blocked{ background:var(--brick-bg); color:#fb7185; text-decoration:line-through; }
-  .cal-block{ position:absolute; bottom:2px; font-size:11px; font-weight:700; color:var(--brick); }
+  .cal-cell.selected .cal-dot{ background:#fff; }
+  .cal-cell.blocked{ background:var(--brick-bg); color:var(--danger); text-decoration:line-through; }
+  .cal-block{ position:absolute; bottom:2px; font-size:11px; font-weight:700; color:var(--danger); }
   .cal-dots-wrap{ position:absolute; bottom:3px; left:50%; transform:translateX(-50%); display:flex; gap:2px; }
-  .cal-dot-agenda{ width:4.5px; height:4.5px; border-radius:999px; box-shadow:0 0 0 1px rgba(0,0,0,.6); }
+  .cal-dot-agenda{ width:5px; height:5px; border-radius:999px; }
   .cal-legenda-agenda{ display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--ink-soft); }
   .cal-legenda-swatch{ width:7px; height:7px; border-radius:999px; display:inline-block; flex:none; }
   ::-webkit-scrollbar{ height:6px; width:6px; }
-  ::-webkit-scrollbar-thumb{ background:rgba(255,255,255,.2); border-radius:99px; }
+  ::-webkit-scrollbar-thumb{ background:rgba(100,116,139,.35); border-radius:99px; }
   ::-webkit-scrollbar-track{ background:transparent; }
 
-  .modal-overlay{
-    position:fixed; inset:0; background:rgba(31,41,55,.45);
-    display:flex; align-items:center; justify-content:center; z-index:50; padding:1rem;
-    animation:fadeIn .2s ease-out;
-  }
+  .modal-overlay{ position:fixed; inset:0; background:rgba(15,23,42,.45);  display:flex; align-items:center; justify-content:center; z-index:50; padding:1rem; animation:fadeIn .2s ease-out; }
+  .modal-overlay > .card{ background:var(--surface) !important; border:1px solid var(--line) !important; box-shadow:var(--shadow-lg); animation:riseIn .22s ease-out; }
   @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-  .stat-card{
-    background:var(--bg-soft);
-    border:1px solid var(--line); border-radius:var(--radius-md);
-    padding:1.1rem .9rem; text-align:center; position:relative; overflow:hidden;
-    box-shadow:var(--shadow-sm);
-  }
-  .stat-num{ font-family:'Outfit', sans-serif; font-size:1.9rem; color:var(--primary-dark); line-height:1; font-weight:600; }
-  .avatar-circle{
-    width:56px; height:56px; border-radius:999px;
-    background:var(--gold-bg);
-    border:1px solid var(--line);
-    display:flex; align-items:center; justify-content:center; font-size:1.6rem; flex-shrink:0;
-  }
-  .notif-panel{
-    position:absolute; right:0; top:calc(100% + 10px); width:340px; max-width:88vw; max-height:420px;
-    overflow-y:auto; z-index:40; box-shadow:var(--shadow-lg); animation:popIn .15s ease-out;
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md);
-  }
-  @keyframes popIn{ from{opacity:0; transform:translateY(-6px) scale(.98);} to{opacity:1; transform:translateY(0) scale(1);} }
-  .notif-dot{
-    position:absolute; top:-4px; right:-6px; background:var(--brick); color:#fff; font-size:.65rem;
-    font-weight:700; border-radius:999px; min-width:16px; height:16px; display:flex; align-items:center;
-    justify-content:center; padding:0 4px; box-shadow:0 0 0 2px var(--bg);
-  }
-  .tab-row{ display:inline-flex; gap:4px; background:var(--bg-soft); padding:4px; border-radius:12px; border:1px solid var(--line); }
-  .tab-btn{ padding:.5rem 1.1rem; border-radius:8px; font-size:.83rem; font-weight:500; cursor:pointer; transition:all .2s ease; font-family:'Outfit', sans-serif; }
-  .tab-btn.active{ background:var(--surface); color:var(--primary-dark); box-shadow:var(--shadow-sm); border:1px solid var(--line); }
+  @keyframes riseIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  .stat-card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md); padding:1.25rem .9rem; text-align:center; position:relative; overflow:hidden; }
+  .stat-num{ font-size:2.1rem; color:var(--primary-dark); line-height:1; font-weight:600; }
+  .avatar-circle{ width:56px; height:56px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:1.6rem; flex-shrink:0; }
+  .notif-panel{ position:absolute; right:0; top:calc(100% + 10px); width:340px; max-width:88vw; max-height:420px; overflow-y:auto; z-index:40; box-shadow:var(--shadow-lg); animation:popIn .15s ease-out; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-md); }
+  @keyframes popIn{ from{opacity:0; transform:translateY(-6px) scale(.98);} to{opacity:1; transform:none;} }
+  .notif-dot{ position:absolute; top:-4px; right:-6px; background:var(--danger); color:#fff; font-size:.65rem; font-weight:700; border-radius:999px; min-width:16px; height:16px; display:flex; align-items:center; justify-content:center; padding:0 4px; box-shadow:0 0 0 2px var(--surface); }
+  .tab-row{ display:inline-flex; gap:4px; background:var(--surface-2); padding:4px; border-radius:12px; border:1px solid var(--line); }
+  .tab-btn{ padding:.5rem 1.1rem; border-radius:8px; font-size:.83rem; font-weight:500; cursor:pointer; transition:all .2s ease; font-family:'Inter',sans-serif; min-height:40px; }
+  .tab-btn.active{ background:var(--surface); color:var(--primary-dark); font-weight:600; box-shadow:var(--shadow-sm); }
   .tab-btn:not(.active){ background:transparent; color:var(--ink-soft); }
-  .tab-btn:not(.active):hover{ color:var(--ink); background:rgba(31,41,55,.04); }
+  .tab-btn:not(.active):hover{ color:var(--ink); background:rgba(15,23,42,.05); }
   .toast-wrap{ position:fixed; right:1.25rem; bottom:1.25rem; z-index:100; display:flex; flex-direction:column; gap:.65rem; width:min(360px,calc(100vw - 2.5rem)); }
-  .toast{
-    background:#fff; border:1px solid var(--line); border-radius:var(--radius-md);
-    padding:.85rem 1rem; box-shadow:var(--shadow-lg); display:flex; align-items:flex-start; gap:.65rem;
-    animation:toastIn .25s ease; position:relative; overflow:hidden; color:var(--ink);
-  }
+  .toast{ background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-md); padding:.85rem 1rem; box-shadow:var(--shadow-lg); display:flex; align-items:flex-start; gap:.65rem; animation:toastIn .25s ease; position:relative; overflow:hidden; color:var(--ink); }
   .toast::after{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--primary); }
-  .toast.success::after{ background:var(--gold); }
-  .toast.error::after{ background:var(--brick); }
-  .toast.info::after{ background:var(--primary); }
-  @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+  .toast.success::after{ background:var(--success); }
+  .toast.error::after{ background:var(--danger); }
+  .toast.info::after{ background:var(--blue); }
+  @keyframes toastIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:none}}
   .calendar-popover{ width:290px; max-width:calc(100vw - 2rem); }
   .rec-dia-wrap{ position:relative; }
   .rec-dia{ position:absolute; opacity:0; width:1px; height:1px; pointer-events:none; }
   .rec-dia + span{ transition:all .15s ease; user-select:none; }
-  .rec-dia:checked + span{ background:var(--primary); color:#fff; border-color:var(--primary); }
+  .rec-dia:checked + span{ background:var(--primary); color:#fff; border-color:transparent; }
   .rec-dia:focus-visible + span{ outline:2px solid var(--primary); outline-offset:2px; }
-  @media (max-width:640px){
-    .calendar-popover{ position:fixed !important; left:50% !important; right:auto !important; top:6rem !important; transform:translateX(-50%); width:min(290px,calc(100vw - 1.5rem)); margin:0 !important; }
-  }
+  .live-dot{ display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--success); }
 
-  /* Navegação inferior — mobile */
+  .topbar{ position:sticky; top:0; z-index:30; background:rgba(255,255,255,.9);  border-bottom:1px solid var(--line); }
+  .vz-logo{ display:inline-flex; align-items:center; flex-shrink:0; }
   .mobile-bottombar{ display:none; }
   @media (max-width:768px){
-    .mobile-bottombar{
-      display:flex; position:fixed; left:0; right:0; bottom:0; z-index:60;
-      background:rgba(255,255,255,.97); border-top:1px solid var(--line);
-      padding:.4rem .5rem calc(.4rem + env(safe-area-inset-bottom));
-      box-shadow:0 -4px 12px rgba(31,41,55,.06);
-    }
-    .mobile-bottombar button{
-      flex:1; display:flex; flex-direction:column; align-items:center; gap:.15rem;
-      font-size:.66rem; font-weight:500; color:var(--ink-soft); padding:.35rem 0; border-radius:10px;
-      background:transparent; border:none;
-    }
-    .mobile-bottombar button .ic{ font-size:1.05rem; }
+    .mobile-bottombar{ display:flex; position:fixed; left:0; right:0; bottom:0; z-index:60; background:rgba(255,255,255,.96);  border-top:1px solid var(--line); padding:.4rem .5rem calc(.4rem + env(safe-area-inset-bottom)); }
+    .mobile-bottombar button{ flex:1; min-height:48px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:.15rem; font-size:.66rem; font-weight:500; color:var(--ink-soft); border-radius:10px; background:transparent; border:none; }
+    .mobile-bottombar button .ic{ display:flex; }
+    .mobile-bottombar button .ic svg{ width:22px; height:22px; }
     .mobile-bottombar button.active{ color:var(--primary); }
-    body{ padding-bottom:64px; }
-  }
-
-  @media (max-width:768px){
+    body{ padding-bottom:72px; }
     .max-w-5xl,.max-w-4xl,.max-w-3xl,.max-w-2xl{width:100%;max-width:none;}
     #app > div{max-width:100%;}
     .card{border-radius:var(--radius-md);}
-    .stat-card{padding:.8rem .55rem;min-width:0;}
-    .stat-num{font-size:1.5rem;}
-    .notif-panel{position:fixed;left:.75rem;right:.75rem;top:4.5rem;width:auto;max-width:none;max-height:min(70vh, 420px);}
+    .stat-card{padding:.9rem .55rem;min-width:0;}
+    .stat-num{font-size:1.6rem;}
+    .notif-panel{position:fixed;left:.75rem;right:.75rem;top:4.5rem;width:auto;max-width:none;max-height:min(70vh,420px);}
     .modal-overlay{padding:0;align-items:flex-end;}
     .modal-overlay > .card{max-height:88vh;overflow-y:auto;border-radius:var(--radius-lg) var(--radius-lg) 0 0;width:100%;max-width:100%;}
     .calendar-popover{z-index:70;}
-    .tab-btn{flex:1;text-align:center;min-height:38px;display:flex;align-items:center;justify-content:center;}
+    .tab-btn{flex:1;text-align:center;display:flex;align-items:center;justify-content:center;}
     .tab-row{width:100%;}
+    .card{overflow:hidden}
+    .grid{min-width:0}
+    input,select,textarea{min-width:0}
+    .action-row > button,.action-row > a{flex:1 1 140px}
   }
   @media (max-width:640px){
     body{font-size:14.5px;}
-    .calendar-popover{position:fixed !important;left:50% !important;right:auto !important;top:4.75rem !important;transform:translateX(-50%);width:min(340px,calc(100vw - 1rem)) !important;max-width:calc(100vw - 1rem);}
+    .calendar-popover{position:fixed !important;left:50% !important;right:auto !important;top:4.75rem !important;transform:translateX(-50%);width:min(340px,calc(100vw - 1rem)) !important;max-width:calc(100vw - 1rem);margin:0 !important;}
     .cal-cell{width:38px;height:38px;}
-    .toast-wrap{right:.5rem;left:.5rem;bottom:calc(.5rem + 64px);width:auto;}
+    .toast-wrap{right:.5rem;left:.5rem;bottom:calc(.5rem + 72px);width:auto;}
     .toast{padding:.75rem .8rem;}
-    .btn-primary,.btn-ghost,.btn-brick{min-height:42px;}
+    .btn-primary,.btn-ghost,.btn-brick{min-height:44px;}
     .flex.items-center.justify-between{min-width:0;}
     .grid.grid-cols-2{grid-template-columns:1fr 1fr;}
     .grid.grid-cols-3,.grid.lg\:grid-cols-3{grid-template-columns:1fr;}
@@ -234,64 +176,39 @@
     .py-8{padding-top:1.25rem!important;padding-bottom:1.25rem!important;}
     .py-6{padding-top:1rem!important;padding-bottom:1rem!important;}
     .font-display.text-2xl{font-size:1.4rem;line-height:1.2;}
-    .grid.grid-cols-2{grid-template-columns:1fr 1fr;gap:.5rem;}
-    .stat-num{font-size:1.3rem;}
+    .grid.grid-cols-2{gap:.5rem;}
+    .stat-num{font-size:1.4rem;}
     .badge{font-size:.66rem;padding:.18rem .5rem;}
-    .card.p-4{padding:.85rem;}
-    .card.p-5{padding:1rem;}
-    .card.p-6{padding:1.1rem;}
+    .card.p-4{padding:.85rem;} .card.p-5{padding:1rem;} .card.p-6{padding:1.1rem;}
   }
-
   .action-row{display:flex;flex-wrap:wrap;gap:.5rem;min-width:0}
   .action-row > *{min-width:0}
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  @media (max-width:768px){
-    .action-row > button,.action-row > a{flex:1 1 140px}
-    .card{overflow:hidden}
-    .grid{min-width:0}
-    input,select,textarea{min-width:0}
-  }
   @media (max-width:480px){
     .action-row > button,.action-row > a{flex:1 1 100%}
-  }
-  @media (max-width:480px){
     .cartao-horario{flex-direction:column;align-items:stretch !important;}
     .cartao-horario > div:last-child{width:100%;text-align:left !important;min-width:0 !important;}
     .cartao-horario > div:last-child .flex-col{flex-direction:row;flex-wrap:wrap;}
     .cartao-horario > div:last-child button{flex:1 1 auto;}
   }
-
-  .convenio-chip{
-    display:inline-flex; align-items:center; gap:.35rem; font-size:.7rem; font-weight:600;
-    padding:.2rem .6rem .2rem .25rem; border-radius:999px; border:1px solid rgba(255,255,255,.1); background:rgba(255,255,255,.03);
-    white-space:nowrap; font-family:'Outfit', sans-serif;
-  }
-  .convenio-chip .sigla{
-    width:20px; height:20px; border-radius:999px; display:flex; align-items:center; justify-content:center;
-    font-size:.6rem; font-weight:700; color:#fff; flex-shrink:0; text-shadow:0 1px 2px rgba(0,0,0,.5);
-  }
-  .clinica-icon{
-    width:56px; height:56px; border-radius:16px;
-    background:var(--bg-soft);
-    border:1px solid var(--line);
-    display:flex; align-items:center; justify-content:center; font-size:1.7rem; flex-shrink:0;
-  }
-
+  .convenio-chip{ display:inline-flex; align-items:center; gap:.35rem; font-size:.7rem; font-weight:600; padding:.2rem .6rem .2rem .25rem; border-radius:999px; border:1px solid var(--line); background:var(--surface); white-space:nowrap; font-family:'Inter',sans-serif; }
+  .convenio-chip .sigla{ width:20px; height:20px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-size:.6rem; font-weight:700; color:#fff; flex-shrink:0;  }
+  .clinica-icon{ width:56px; height:56px; border-radius:16px; background:var(--surface-2); border:1px solid var(--line); display:flex; align-items:center; justify-content:center; font-size:1.7rem; flex-shrink:0; }
   #fluxo-hero{ display:block; margin:0 auto; }
-  @media (prefers-reduced-motion: reduce){ #fluxo-hero{ opacity:.85; } }
-
-  .agenda-view-toggle{display:inline-flex;gap:3px;background:var(--bg-soft);padding:3px;border:1px solid var(--line);border-radius:10px;}
-  .agenda-view-toggle button{border:0;background:transparent;padding:.45rem .7rem;border-radius:7px;font-size:.75rem;font-weight:600;color:var(--ink-soft);cursor:pointer;}
+  .agenda-view-toggle{display:inline-flex;gap:3px;background:var(--surface-2);padding:3px;border:1px solid var(--line);border-radius:10px;}
+  .agenda-view-toggle button{border:0;background:transparent;padding:.45rem .7rem;min-height:36px;border-radius:7px;font-size:.75rem;font-weight:600;color:var(--ink-soft);cursor:pointer;}
   .agenda-view-toggle button.active{background:var(--surface);color:var(--primary-dark);box-shadow:var(--shadow-sm);}
   .agenda-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;}
   .agenda-week-day{min-height:120px;}
-  .report-bar{height:8px;border-radius:99px;background:var(--bg-soft);overflow:hidden;}
+  .report-bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden;}
   .report-bar > span{display:block;height:100%;background:var(--primary);border-radius:99px;}
   .notification-category{font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:700;margin-bottom:.35rem;}
-
-  /* Overrides para as classes utilitárias Tailwind estáticas usadas nos templates JS */
   .bg-white{ background-color:var(--surface) !important; color:var(--ink) !important; }
   .shadow-sm,.shadow-md,.shadow-lg{ box-shadow:var(--shadow-sm) !important; }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation:none !important; transition:none !important; scroll-behavior:auto !important; }
+    .card:hover{ transform:none !important; }
+  }
 </style>
 </head>
 <body>
@@ -312,7 +229,7 @@ function iniciarAnimacaoHero(){
     if (!document.body.contains(canvas)) return; // tela trocou, encerra este loop
     ctx.clearRect(0,0,W,H);
 
-    ctx.strokeStyle = '#2f8f7f';
+    ctx.strokeStyle = '#0B7A6C';
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let x=0; x<=W; x+=2){
@@ -327,7 +244,7 @@ function iniciarAnimacaoHero(){
       const px = (t/20) % W;
       const env = Math.min(1, px/40) * Math.min(1, (W-px)/40 + .3);
       const py = H/2 + Math.sin(px/22 + t/900) * 8 * env;
-      ctx.fillStyle = '#2f8f7f';
+      ctx.fillStyle = '#0B7A6C';
       ctx.beginPath(); ctx.arc(px, py, 3, 0, Math.PI*2); ctx.fill();
       requestAnimationFrame(desenhar);
     }
@@ -848,7 +765,7 @@ function carregarDados() {
     state.profissionais.forEach(p => {
       if (!p.especialidade) p.especialidade = p.profissao;
       if (!p.avatar) p.avatar = '🧑⚕️';
-      if (!p.descricao) p.descricao = 'Profissional cadastrado na plataforma Fluxo.';
+      if (!p.descricao) p.descricao = 'Profissional cadastrado no Vezzo.';
       if (!p.modalidadeAtendimento) p.modalidadeAtendimento = 'presencial';
       if (p.localAtendimento === undefined) p.localAtendimento = '';
       if (p.clinicaId === undefined || p.clinicaId === null) p.clinicaId = state.clinicas[state.clinicas.length - 1].id;
@@ -1515,7 +1432,7 @@ function fazerCadastro(){
     const nova = {
       id: state.proximoIdClinica++, nome, email, senha,
       especialidade: especialidade || 'Clínica geral',
-      descricao: `${nome} — cadastrada na plataforma Fluxo.`,
+      descricao: `${nome} — cadastrada no Vezzo.`,
       icone: '🏥',
       endereco,
       convenios,
@@ -1538,7 +1455,7 @@ function fazerCadastro(){
     const novo = {
       id: state.proximoIdProfissional++, nome, email, senha, profissao,
       especialidade: especialidade || profissao,
-      descricao: descricao || 'Profissional cadastrado na plataforma Fluxo.',
+      descricao: descricao || 'Profissional cadastrado no Vezzo.',
       avatar: '🧑⚕️',
       clinicaId: clinicaEscolhida.id,
       modalidadeAtendimento: modalidadeAtendimento || 'presencial',
@@ -1658,7 +1575,7 @@ function selecionarDia(iso){
   render();
 }
 
-const PALETA_AGENDAS = ['#38bdf8','#34d399','#fbbf24','#f472b6','#a78bfa','#22d3ee','#fb7185','#a3e635'];
+const PALETA_AGENDAS = ['#0369A1','#047857','#B45309','#BE185D','#6D28D9','#0E7490','#BE123C','#4D7C0F'];
 function corAgenda(agendaId){
   return PALETA_AGENDAS[Math.abs(Number(agendaId)) % PALETA_AGENDAS.length];
 }
@@ -1781,8 +1698,8 @@ function telaLogin(){
       <div class="w-full max-w-sm">
         <div class="text-center mb-8">
           <canvas id="fluxo-hero" width="220" height="72"></canvas>
-          <h1 class="font-display text-4xl mb-2 text-white">Fluxo</h1>
-          <p class="text-sm text-[var(--ink-soft)]">Agendamentos simples e inteligentes</p>
+          <h1 class="mb-2 flex justify-center"><span class="vz-logo" role="img" aria-label="Vezzo" style="gap:.5rem"><svg width="44" height="44" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 7l9.5 19L23 10" stroke="#0B7A6C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25" cy="6.5" r="3" fill="#0B7A6C"/><circle cx="25" cy="6.5" r="5" fill="#0B7A6C" opacity=".18"/></svg><svg width="113" height="44" viewBox="0 0 72 28" overflow="visible" aria-hidden="true"><text x="0" y="21" font-family="Inter,sans-serif" font-weight="600" font-size="23" letter-spacing="-.5" fill="#1B2430">vezzo</text></svg></span></h1>
+          <p class="text-sm text-[var(--ink-soft)]">Chegou a sua vez.</p>
         </div>
         <div class="card p-6 sm:p-7" style="box-shadow:var(--shadow-lg);">
           <h2 class="text-lg font-semibold text-center mb-5">${telaLoginAtiva === 'login' ? 'Acesse sua conta' : 'Crie sua conta'}</h2>
@@ -2087,7 +2004,7 @@ function telaPacientePerfil(){
           </div>
           <div>
             <h4 class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-1">Descrição</h4>
-            <p class="text-sm">${p.descricao || 'Profissional cadastrado na plataforma Fluxo.'}</p>
+            <p class="text-sm">${p.descricao || 'Profissional cadastrado no Vezzo.'}</p>
           </div>
           <div>
             <h4 class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-1">Modalidade</h4>
@@ -2249,7 +2166,7 @@ function encDesenhar(){
     <div class="card bg-white p-5 max-w-md w-full max-h-[90vh] overflow-y-auto" id="enc-scroll">
       <h3 class="font-display text-lg mb-1">⚡ Antecipar vaga</h3>
       <p class="text-xs text-[var(--ink-soft)] mb-1">Consulta atual: <strong>${escaparHtml(prof.nome)}</strong> · ${encQuando(h)}</p>
-      <p class="text-sm text-[var(--ink-soft)] mb-3">Se surgir uma vaga mais cedo nos dias e horários abaixo, o Fluxo avisa você.</p>
+      <p class="text-sm text-[var(--ink-soft)] mb-3">Se surgir uma vaga mais cedo nos dias e horários abaixo, o Vezzo avisa você na hora.</p>
       ${d.ativa ? '<div class="text-xs font-medium text-[var(--gold)] mb-3">⚡ Antecipação ativa — você pode editar ou desativar.</div>' : ''}
       <div class="space-y-2 text-sm">${blocos}</div>
       <div class="grid grid-cols-2 gap-2 mt-4 text-sm">
@@ -2565,7 +2482,7 @@ function relatorioProfissional(){
   const proximas=meus.filter(x=>x.c.status==='confirmada' && !consultaJaPassou(x.h)).length;
   const livres=state.horarios.filter(h=>h.profissionalId===state.usuario.id && h.status==='livre').length;
   const filas=state.horarios.filter(h=>h.profissionalId===state.usuario.id).reduce((s,h)=>s+h.fila.length,0);
-  return `<div class="card p-5 bg-white"><div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-medium">Relatórios</h3><p class="text-xs text-[var(--ink-soft)] mt-1">Resumo dos dados registrados no Fluxo.</p></div><span class="badge badge-ocupado">Atual</span></div><div class="grid grid-cols-2 sm:grid-cols-4 gap-3"><div class="stat-card"><div class="stat-num">${meus.length}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Total de consultas</div></div><div class="stat-card"><div class="stat-num">${comparecimento}%</div><div class="text-xs text-[var(--ink-soft)] mt-1">Comparecimento</div></div><div class="stat-card"><div class="stat-num">${canceladas}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Cancelamentos</div></div><div class="stat-card"><div class="stat-num">${faltas}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Faltas</div></div></div><div class="mt-5 space-y-3 text-xs"><div><div class="flex justify-between mb-1"><span>Realizadas</span><strong>${realizadas}</strong></div><div class="report-bar"><span style="width:${totalEnc?Math.round(realizadas/totalEnc*100):0}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Próximas confirmadas</span><strong>${proximas}</strong></div><div class="report-bar"><span style="width:${meus.length?Math.min(100,Math.round(proximas/meus.length*100)):0}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Horários livres</span><strong>${livres}</strong></div><div class="report-bar"><span style="width:${Math.min(100,livres*10)}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Pessoas na fila</span><strong>${filas}</strong></div><div class="report-bar"><span style="width:${Math.min(100,filas*10)}%"></span></div></div></div></div>`;
+  return `<div class="card p-5 bg-white"><div class="flex items-center justify-between gap-3 mb-4"><div><h3 class="font-medium">Relatórios</h3><p class="text-xs text-[var(--ink-soft)] mt-1">Resumo dos dados registrados no Vezzo.</p></div><span class="badge badge-ocupado">Atual</span></div><div class="grid grid-cols-2 sm:grid-cols-4 gap-3"><div class="stat-card"><div class="stat-num">${meus.length}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Total de consultas</div></div><div class="stat-card"><div class="stat-num">${comparecimento}%</div><div class="text-xs text-[var(--ink-soft)] mt-1">Comparecimento</div></div><div class="stat-card"><div class="stat-num">${canceladas}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Cancelamentos</div></div><div class="stat-card"><div class="stat-num">${faltas}</div><div class="text-xs text-[var(--ink-soft)] mt-1">Faltas</div></div></div><div class="mt-5 space-y-3 text-xs"><div><div class="flex justify-between mb-1"><span>Realizadas</span><strong>${realizadas}</strong></div><div class="report-bar"><span style="width:${totalEnc?Math.round(realizadas/totalEnc*100):0}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Próximas confirmadas</span><strong>${proximas}</strong></div><div class="report-bar"><span style="width:${meus.length?Math.min(100,Math.round(proximas/meus.length*100)):0}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Horários livres</span><strong>${livres}</strong></div><div class="report-bar"><span style="width:${Math.min(100,livres*10)}%"></span></div></div><div><div class="flex justify-between mb-1"><span>Pessoas na fila</span><strong>${filas}</strong></div><div class="report-bar"><span style="width:${Math.min(100,filas*10)}%"></span></div></div></div></div>`;
 }
 
 function telaProfissional(){
@@ -2795,7 +2712,7 @@ function telaProfissional(){
         <button onclick="salvarConfiguracoesAgenda()" class="btn-primary px-4 py-2 text-sm mt-4">Salvar regras</button>
       </div>
 
-      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado na plataforma Fluxo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`★ ${r.media.toFixed(1)} (${r.quantidade})`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${aval.length?aval.slice().reverse().slice(0,5).map(a=>`<div class="border-t border-[var(--line)] py-2 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong> · ${escaparHtml(a.paciente?.nome||'Paciente')}${a.comentario?`<div class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</div>`:''}</div>`).join(''):'<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
+      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado no Vezzo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`★ ${r.media.toFixed(1)} (${r.quantidade})`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${aval.length?aval.slice().reverse().slice(0,5).map(a=>`<div class="border-t border-[var(--line)] py-2 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong> · ${escaparHtml(a.paciente?.nome||'Paciente')}${a.comentario?`<div class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</div>`:''}</div>`).join(''):'<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
 
   const conteudoAba = abaProfissional === 'agenda' ? conteudoAgenda : abaProfissional === 'config' ? conteudoConfig : conteudoPainel;
 
@@ -2815,28 +2732,26 @@ function barraNavegacao(){
 
   const barraInferior = ehClinica ? `
     <nav class="mobile-bottombar">
-      <button onclick="sair()"><span class="ic">↩️</span>Sair</button>
+      <button onclick="sair()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-2"/></svg></span>Sair</button>
     </nav>` : ehPaciente ? `
     <nav class="mobile-bottombar">
-      <button onclick="irParaAba('profissionais')" class="${abaPaciente === 'profissionais' ? 'active' : ''}"><span class="ic">🔎</span>Clínicas</button>
-      <button onclick="irParaAba('consultas')" class="${abaPaciente === 'consultas' ? 'active' : ''}"><span class="ic">📋</span>Consultas</button>
-      <button onclick="toggleNotificacoes()" class="${notificacoesAbertas ? 'active' : ''}" style="position:relative;"><span class="ic">🔔</span>Avisos${naoLidas > 0 ? `<span class="notif-dot" style="top:-2px;right:22%;">${naoLidas}</span>` : ''}</button>
-      <button onclick="sair()"><span class="ic">↩️</span>Sair</button>
+      <button onclick="irParaAba('profissionais')" class="${abaPaciente === 'profissionais' ? 'active' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span>Clínicas</button>
+      <button onclick="irParaAba('consultas')" class="${abaPaciente === 'consultas' ? 'active' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></span>Consultas</button>
+      <button onclick="toggleNotificacoes()" class="${notificacoesAbertas ? 'active' : ''}" style="position:relative;"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 004 0"/></svg></span>Avisos${naoLidas > 0 ? `<span class="notif-dot" style="top:-2px;right:22%;">${naoLidas}</span>` : ''}</button>
+      <button onclick="sair()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-2"/></svg></span>Sair</button>
     </nav>` : `
     <nav class="mobile-bottombar">
-      <button onclick="irParaAbaProfissional('painel')" class="${abaProfissional === 'painel' ? 'active' : ''}"><span class="ic">🏠</span>Início</button>
-      <button onclick="irParaAbaProfissional('agenda')" class="${abaProfissional === 'agenda' ? 'active' : ''}"><span class="ic">🗓️</span>Agenda</button>
-      <button onclick="toggleNotificacoes()" class="${notificacoesAbertas ? 'active' : ''}" style="position:relative;"><span class="ic">🔔</span>Avisos${naoLidas > 0 ? `<span class="notif-dot" style="top:-2px;right:14%;">${naoLidas}</span>` : ''}</button>
-      <button onclick="irParaAbaProfissional('config')" class="${abaProfissional === 'config' ? 'active' : ''}"><span class="ic">⚙️</span>Config</button>
-      <button onclick="sair()"><span class="ic">↩️</span>Sair</button>
+      <button onclick="irParaAbaProfissional('painel')" class="${abaProfissional === 'painel' ? 'active' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></span>Início</button>
+      <button onclick="irParaAbaProfissional('agenda')" class="${abaProfissional === 'agenda' ? 'active' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></span>Agenda</button>
+      <button onclick="toggleNotificacoes()" class="${notificacoesAbertas ? 'active' : ''}" style="position:relative;"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 004 0"/></svg></span>Avisos${naoLidas > 0 ? `<span class="notif-dot" style="top:-2px;right:14%;">${naoLidas}</span>` : ''}</button>
+      <button onclick="irParaAbaProfissional('config')" class="${abaProfissional === 'config' ? 'active' : ''}"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></span>Config</button>
+      <button onclick="sair()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-2"/></svg></span>Sair</button>
     </nav>`;
 
   return `
-    <div class="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
+    <div class="topbar">
       <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-        <span class="font-display text-xl text-[var(--primary-dark)] flex items-center gap-1.5 flex-shrink-0">
-          <span aria-hidden="true" class="inline-block w-2 h-2 rounded-full" style="background:var(--gold);"></span>Fluxo
-        </span>
+        <span class="vz-logo" role="img" aria-label="Vezzo" style="gap:.5rem"><svg width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M5 7l9.5 19L23 10" stroke="#0B7A6C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="25" cy="6.5" r="3" fill="#0B7A6C"/><circle cx="25" cy="6.5" r="5" fill="#0B7A6C" opacity=".18"/></svg><svg width="72" height="28" viewBox="0 0 72 28" overflow="visible" aria-hidden="true"><text x="0" y="21" font-family="Inter,sans-serif" font-weight="600" font-size="23" letter-spacing="-.5" fill="#1B2430">vezzo</text></svg></span>
         <div class="flex items-center gap-2 sm:gap-3 text-sm min-w-0">
           ${!ehClinica ? `
           <div class="relative hidden sm:block">
@@ -2983,7 +2898,7 @@ function render(){
     if (historicoPacienteId) document.body.insertAdjacentHTML('beforeend', modalHistoricoPaciente());
     if (novoHorarioAberto) document.body.insertAdjacentHTML('beforeend', modalNovoHorario());
   } catch (erro) {
-    console.error('Erro ao renderizar Fluxo:', erro);
+    console.error('Erro ao renderizar Vezzo:', erro);
     app.innerHTML = `<div class="min-h-screen flex items-center justify-center p-6"><div class="card bg-white p-7 max-w-md text-center"><h2 class="font-display text-2xl mb-2">Não foi possível carregar esta tela</h2><p class="text-sm text-[var(--ink-soft)] mb-4">Seus dados foram preservados. Tente recarregar a página.</p><button onclick="location.reload()" class="btn-primary px-4 py-2">Recarregar</button></div></div>`;
   }
 }
