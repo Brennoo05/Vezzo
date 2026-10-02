@@ -2904,6 +2904,271 @@ function render(){
 }
 
 carregarDados();
+/* ===== VEZZO: sem conta de clínica (clínica vira só um dado do profissional) ===== */
+
+// Convênios do profissional = nomes das agendas dele (menos "Geral")
+function conveniosDoProfissional(p){
+  return agendasDoProfissional(p.id).map(a => a.nome).filter(n => n !== 'Geral');
+}
+let filtroClinica = 'todas', filtroConvenio = 'todos';
+
+// Migração: clínica antiga vira texto no profissional + convênios de demonstração
+(function migrarClinicaParaProfissional(){
+  const salvo = localStorage.getItem('fluxoConsultaState');
+  const dados = salvo ? JSON.parse(salvo) : null;
+  const clinicas = (dados && dados.clinicas) || clinicasPadrao();
+  state.profissionais.forEach(p => {
+    if (p.clinicaNome === undefined) p.clinicaNome = (clinicas.find(c => c.id === p.clinicaId) || {}).nome || '';
+  });
+})();
+function migrarDemoConvenios(){
+  if (state.demoConveniosOk) return;
+  state.demoConveniosOk = true;
+  const p4 = state.profissionais.find(p => p.id === 4);
+  if (p4 && agendasDoProfissional(4).length === 1) {
+    ['Mediservice','SulAmérica'].forEach((n,i) => state.agendas.push({ id: state.proximoIdAgenda++, profissionalId: 4, nome: n, criadaEm: new Date().toISOString(), prioridade: 2+i }));
+  }
+}
+
+// Busca com todos os profissionais e filtros (clínica e convênio incluídos)
+function profissionaisFiltrados(){
+  const termo = buscaProfissionalTexto.trim().toLowerCase();
+  return state.profissionais.filter(p => {
+    const texto = `${p.nome} ${p.profissao} ${p.especialidade||''} ${p.clinicaNome||''}`.toLowerCase();
+    if (termo && !texto.includes(termo)) return false;
+    if (filtroEspecialidade !== 'todas' && (p.especialidade || p.profissao) !== filtroEspecialidade) return false;
+    const m = p.modalidadeAtendimento || 'presencial';
+    if (filtroModalidadeProf !== 'todas' && m !== filtroModalidadeProf && m !== 'ambos') return false;
+    if (filtroClinica !== 'todas' && (p.clinicaNome || '') !== filtroClinica) return false;
+    if (filtroConvenio !== 'todos' && !conveniosDoProfissional(p).includes(filtroConvenio)) return false;
+    return true;
+  });
+}
+function onFiltroClinicaChange(v){ filtroClinica = v; document.getElementById('lista-profissionais').innerHTML = renderCardsProfissionais(); }
+function onFiltroConvenioChange(v){ filtroConvenio = v; document.getElementById('lista-profissionais').innerHTML = renderCardsProfissionais(); }
+
+function cartaoProfissional(p){
+  const modalidade = p.modalidadeAtendimento || 'presencial';
+  const modalidadeTexto = modalidade === 'ambos' ? '💻 Online · 📍 Presencial' : (modalidade === 'online' ? '💻 Online' : '📍 Presencial');
+  return `
+    <div class="card p-5 hover:border-[var(--primary)] cursor-pointer transition flex gap-4" onclick="selecionarProfissional(${p.id})">
+      <div class="avatar-circle">${p.avatar || '🧑‍⚕️'}</div>
+      <div class="flex-1">
+        <h3 class="font-display text-xl text-[var(--primary-dark)]">${escaparHtml(p.nome)}</h3>
+        <p class="text-sm text-[var(--ink-soft)] mt-0.5">${escaparHtml(p.especialidade || p.profissao)}</p>
+        ${p.clinicaNome ? `<p class="text-xs text-[var(--ink-soft)] mt-1">🏥 ${escaparHtml(p.clinicaNome)}</p>` : ''}
+        <p class="text-xs mt-2 text-[var(--ink-soft)]">${modalidadeTexto}</p>
+      </div>
+    </div>`;
+}
+
+function telaPacienteBusca(){
+  const profs = state.profissionais;
+  const esp = [...new Set(profs.map(p => p.especialidade || p.profissao))];
+  const cli = [...new Set(profs.map(p => p.clinicaNome).filter(Boolean))];
+  const con = [...new Set(profs.flatMap(conveniosDoProfissional))];
+  const sel = (fn, atual, todos, rotulo, lista) => `<select onchange="${fn}(this.value)" class="border border-[var(--line)] rounded-lg px-3 py-2 text-sm bg-white"><option value="${todos}" ${atual===todos?'selected':''}>${rotulo}: Todos</option>${lista.map(x=>`<option value="${escaparHtml(x)}" ${atual===x?'selected':''}>${escaparHtml(x)}</option>`).join('')}</select>`;
+  return `
+    ${barraNavegacao()}
+    <div class="max-w-4xl mx-auto px-4 py-8">
+      <h2 class="font-display text-2xl mb-1">Encontre seu profissional</h2>
+      <p class="text-sm text-[var(--ink-soft)] mb-6">Busque por nome ou especialidade e use os filtros para chegar mais rápido.</p>
+      <div class="card p-4 mb-5 bg-white grid sm:grid-cols-2 gap-3">
+        <input type="text" placeholder="🔍 Buscar profissional..." value="${escaparHtml(buscaProfissionalTexto)}" oninput="onBuscaProfissionalInput(this.value)" class="border border-[var(--line)] rounded-lg px-3 py-2 text-sm sm:col-span-2">
+        ${sel('onFiltroEspecialidadeChange', filtroEspecialidade, 'todas', 'Especialidade', esp)}
+        ${sel('onFiltroModalidadeChange', filtroModalidadeProf, 'todas', 'Modalidade', ['presencial','online'])}
+        ${sel('onFiltroConvenioChange', filtroConvenio, 'todos', 'Convênio', con)}
+        ${sel('onFiltroClinicaChange', filtroClinica, 'todas', 'Clínica', cli)}
+      </div>
+      <div id="lista-profissionais">${renderCardsProfissionais()}</div>
+    </div>`;
+}
+
+function telaPaciente(){
+  if (abaPaciente === 'consultas') return telaPacienteConsultas();
+  if (state.profissionalSelecionadoId && state.agendaAberta) return telaPacienteAgenda();
+  if (state.profissionalSelecionadoId) return telaPacientePerfil();
+  return telaPacienteBusca();
+}
+
+// Perfil: reaproveita o original, mas sem depender da clínica
+const _telaPerfilOriginal = telaPacientePerfil;
+telaPacientePerfil = function(){
+  const p = getProfissional(state.profissionalSelecionadoId);
+  const getOrig = getClinica; getClinica = () => null;
+  let h; try { h = _telaPerfilOriginal(); } finally { getClinica = getOrig; }
+  h = h.replace('Voltar para médicos', 'Voltar para a busca');
+  if (p.clinicaNome) h = h.replace(`<p class="text-sm text-[var(--ink-soft)]">${p.profissao}</p>`, `<p class="text-sm text-[var(--ink-soft)]">${p.profissao}</p><p class="text-xs text-[var(--ink-soft)] mt-1">🏥 ${escaparHtml(p.clinicaNome)}</p>`);
+  const conv = conveniosDoProfissional(p);
+  if (conv.length) h = h.replace('<button onclick="abrirAgendaProfissional()"', `<div class="mt-5"><h4 class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-1">Convênios aceitos</h4><div class="flex flex-wrap gap-1.5">${conv.map(n => chipConvenio(n)).join('')}</div></div><button onclick="abrirAgendaProfissional()"`);
+  return h;
+};
+
+// Login: remove a aba "Clínica" e troca o código de convite por um campo opcional
+const _telaLoginOriginal = telaLogin;
+telaLogin = function(){
+  let h = _telaLoginOriginal();
+  h = h.replace(/<label class="tab-btn flex-1 text-center[^"]*" style="cursor:pointer;">\s*<input type="radio" name="tipo"[^>]*alternarTipoConta\('clinica'\)[^>]*>[^<]*<\/label>/, '');
+  h = h.replace(/<div>\s*<input id="cad-codigo-clinica"[\s\S]*?<\/p>\s*<\/div>/, '<input id="cad-clinica-nome" type="text" placeholder="Clínica/local onde atende (opcional)" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm">');
+  return h;
+};
+
+// Menu: "Clínicas" vira "Buscar"
+const _barraOriginal = barraNavegacao;
+barraNavegacao = function(){
+  return _barraOriginal().split('>Clínicas</span>').join('>Buscar</span>').split('</span>Clínicas</button>').join('</span>Buscar</button>');
+};
+
+// Cadastro: profissional sem código de convite; sem cadastro de clínica
+function fazerCadastro(){
+  const nome = document.getElementById('cad-nome').value.trim();
+  const email = document.getElementById('cad-email').value.trim();
+  const senha = document.getElementById('cad-senha').value;
+  if (!nome || !email || !senha) { mensagemErro('Preencha os campos obrigatórios.'); return; }
+
+  if (tipoContaSelecionado === 'paciente') {
+    if (state.pacientes.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
+    const novo = { id: state.proximoIdPaciente++, nome, email, senha };
+    state.pacientes.push(novo);
+    state.usuario = { tipo: 'paciente', id: novo.id, nome: novo.nome };
+    abaPaciente = 'profissionais';
+  } else {
+    const profissao = document.getElementById('cad-profissao').value.trim();
+    if (!profissao) { mensagemErro('Preencha sua profissão.'); return; }
+    if (state.profissionais.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
+    const especialidade = document.getElementById('cad-especialidade').value.trim();
+    const descricao = document.getElementById('cad-descricao').value.trim();
+    const modalidadeAtendimento = document.getElementById('cad-modalidade').value;
+    const localAtendimento = document.getElementById('cad-local')?.value.trim() || '';
+    const clinicaNome = document.getElementById('cad-clinica-nome')?.value.trim() || '';
+    const novo = {
+      id: state.proximoIdProfissional++, nome, email, senha, profissao,
+      especialidade: especialidade || profissao,
+      descricao: descricao || 'Profissional cadastrado no Vezzo.',
+      avatar: '🧑‍⚕️',
+      clinicaId: null, clinicaNome,
+      modalidadeAtendimento: modalidadeAtendimento || 'presencial',
+      localAtendimento: modalidadeAtendimento !== 'online' ? localAtendimento : '',
+    };
+    state.profissionais.push(novo);
+    state.usuario = { tipo: 'profissional', id: novo.id, nome: novo.nome, profissao: novo.profissao };
+    state.agendas.push({ id: state.proximoIdAgenda++, profissionalId: novo.id, nome: 'Geral', criadaEm: new Date().toISOString(), prioridade: 1 });
+    agendaSelecionadaId = agendasDoProfissional(novo.id)[0]?.id ?? null;
+    mostrarToast('Cadastro concluído! Você já aparece na busca dos pacientes.');
+  }
+  render();
+}
+
+/* ===== VEZZO-CLINICA-WIDGET: vínculo com clínica no cadastro (pesquisar, escolher ou adicionar) ===== */
+let cadClinica = null; // { id } = clínica existente | { novo: 'Nome' } = será criada ao concluir o cadastro
+const normTxt = s => String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+function clinicaChipHtml(){
+  if (!cadClinica) return '';
+  const nome = cadClinica.id ? getClinica(cadClinica.id)?.nome : cadClinica.novo;
+  return `<div class="flex items-center justify-between gap-2 bg-[var(--gold-bg)] rounded-lg px-3 py-2 text-sm mb-1"><span>🏥 ${escaparHtml(nome||'')}${cadClinica.novo ? ' <span class="text-xs text-[var(--ink-soft)]">(nova clínica)</span>' : ''}</span><button type="button" onclick="clinicaRemover()" class="text-xs text-[var(--brick)]">Remover</button></div>`;
+}
+function clinicaWidgetHtml(){
+  return `<div>
+    <label class="text-xs text-[var(--ink-soft)] block mb-1">Clínica onde atende (opcional)</label>
+    <div id="cad-clinica-escolhida">${clinicaChipHtml()}</div>
+    <input id="cad-clinica-busca" type="text" autocomplete="off" placeholder="Pesquise o nome da clínica..." oninput="clinicaBuscar(this.value)" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm" style="${cadClinica ? 'display:none' : ''}">
+    <div id="cad-clinica-resultados" class="mt-1 space-y-1"></div>
+  </div>`;
+}
+function clinicaBuscar(v){
+  const box = document.getElementById('cad-clinica-resultados'); if (!box) return;
+  const t = normTxt(v);
+  if (!t) { box.innerHTML = ''; return; }
+  const achadas = state.clinicas.filter(c => normTxt(c.nome).includes(t)).slice(0, 5);
+  const exata = state.clinicas.some(c => normTxt(c.nome) === t);
+  const estilo = 'class="w-full text-left text-sm px-3 py-2 rounded-lg border border-[var(--line)] bg-white hover:border-[var(--primary)]"';
+  box.innerHTML = achadas.map(c => `<button type="button" ${estilo} onclick="clinicaEscolher(${c.id})">🏥 ${escaparHtml(c.nome)}</button>`).join('')
+    + (exata ? '' : `<button type="button" ${estilo} onclick="clinicaAdicionar()">➕ Adicionar "${escaparHtml(v.trim())}"</button>`);
+}
+function clinicaAtualizarUI(){
+  const chip = document.getElementById('cad-clinica-escolhida'), inp = document.getElementById('cad-clinica-busca'), box = document.getElementById('cad-clinica-resultados');
+  if (chip) chip.innerHTML = clinicaChipHtml();
+  if (inp) { inp.value = ''; inp.style.display = cadClinica ? 'none' : ''; }
+  if (box) box.innerHTML = '';
+}
+function clinicaEscolher(id){ cadClinica = { id }; clinicaAtualizarUI(); }
+function clinicaAdicionar(){
+  const nome = (document.getElementById('cad-clinica-busca')?.value || '').trim();
+  if (!nome) return;
+  const existente = state.clinicas.find(c => normTxt(c.nome) === normTxt(nome));
+  cadClinica = existente ? { id: existente.id } : { novo: nome };
+  clinicaAtualizarUI();
+}
+function clinicaRemover(){ cadClinica = null; clinicaAtualizarUI(); }
+
+// Login: troca o campo de texto simples pelo widget de pesquisa/adicionar
+const _telaLoginV2 = telaLogin;
+telaLogin = function(){
+  let h = _telaLoginV2();
+  h = h.replace(/<input id="cad-clinica-nome"[^>]*>/, () => clinicaWidgetHtml());
+  return h;
+};
+
+// Cadastro: profissional vincula clínica existente ou cria uma nova
+function fazerCadastro(){
+  const nome = document.getElementById('cad-nome').value.trim();
+  const email = document.getElementById('cad-email').value.trim();
+  const senha = document.getElementById('cad-senha').value;
+  if (!nome || !email || !senha) { mensagemErro('Preencha os campos obrigatórios.'); return; }
+
+  if (tipoContaSelecionado === 'paciente') {
+    if (state.pacientes.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
+    const novo = { id: state.proximoIdPaciente++, nome, email, senha };
+    state.pacientes.push(novo);
+    state.usuario = { tipo: 'paciente', id: novo.id, nome: novo.nome };
+    abaPaciente = 'profissionais';
+  } else {
+    const profissao = document.getElementById('cad-profissao').value.trim();
+    if (!profissao) { mensagemErro('Preencha sua profissão.'); return; }
+    if (state.profissionais.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
+    const especialidade = document.getElementById('cad-especialidade').value.trim();
+    const descricao = document.getElementById('cad-descricao').value.trim();
+    const modalidadeAtendimento = document.getElementById('cad-modalidade').value;
+    const localAtendimento = document.getElementById('cad-local')?.value.trim() || '';
+
+    // Clínica: usa a escolhida; se for nova, cria agora (evita duplicar pelo nome)
+    let clinica = null;
+    if (cadClinica) {
+      if (cadClinica.id) clinica = getClinica(cadClinica.id);
+      else {
+        clinica = state.clinicas.find(c => normTxt(c.nome) === normTxt(cadClinica.novo));
+        if (!clinica) {
+          const idNovo = state.proximoIdClinica++;
+          clinica = { id: idNovo, nome: cadClinica.novo, especialidade: '', descricao: '', icone: '🏥', endereco: '', convenios: [],
+            codigoConvite: gerarCodigoConvite(), email: `clinica${idNovo}@email.com`, senha: '123', criadaEm: new Date().toISOString() };
+          state.clinicas.push(clinica);
+        }
+      }
+    }
+    const novo = {
+      id: state.proximoIdProfissional++, nome, email, senha, profissao,
+      especialidade: especialidade || profissao,
+      descricao: descricao || 'Profissional cadastrado no Vezzo.',
+      avatar: '🧑‍⚕️',
+      clinicaId: clinica ? clinica.id : null, clinicaNome: clinica ? clinica.nome : '',
+      modalidadeAtendimento: modalidadeAtendimento || 'presencial',
+      localAtendimento: modalidadeAtendimento !== 'online' ? localAtendimento : '',
+    };
+    state.profissionais.push(novo);
+    cadClinica = null;
+    state.usuario = { tipo: 'profissional', id: novo.id, nome: novo.nome, profissao: novo.profissao };
+    state.agendas.push({ id: state.proximoIdAgenda++, profissionalId: novo.id, nome: 'Geral', criadaEm: new Date().toISOString(), prioridade: 1 });
+    agendaSelecionadaId = agendasDoProfissional(novo.id)[0]?.id ?? null;
+    mostrarToast(clinica ? `Cadastro concluído! Você está vinculado a ${clinica.nome}.` : 'Cadastro concluído! Você já aparece na busca dos pacientes.');
+  }
+  render();
+}
+
+// Convênios de demonstração (estava definido, mas nunca era chamado)
+migrarDemoConvenios();
+/* ===== fim VEZZO-CLINICA-WIDGET ===== */
+
 render();
 setInterval(() => { const n = state.notificacoes.length; processarLembretes(); salvarDados(); if (state.notificacoes.length !== n) render(); }, 60000);
 </script>
