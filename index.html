@@ -215,7 +215,17 @@
 
 <div id="app" class="min-h-screen relative z-10"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <script>
+// ===== CONEXÃO COM SUPABASE =====
+const SUPABASE_URL = 'https://etmceplwgutuqscoomkl.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_T7N0iTvXCU7kzemADk95Pg_SoOmIMiW';
+
+const supabaseClient = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 // --- LINHA DE FLUXO — assinatura discreta do login (canvas próprio, recriado a cada render) ---
 function iniciarAnimacaoHero(){
   const canvas = document.getElementById('fluxo-hero');
@@ -3110,60 +3120,87 @@ telaLogin = function(){
   return h;
 };
 
-// Cadastro: profissional vincula clínica existente ou cria uma nova
-function fazerCadastro(){
+
+async function fazerCadastro() {
   const nome = document.getElementById('cad-nome').value.trim();
   const email = document.getElementById('cad-email').value.trim();
   const senha = document.getElementById('cad-senha').value;
-  if (!nome || !email || !senha) { mensagemErro('Preencha os campos obrigatórios.'); return; }
 
-  if (tipoContaSelecionado === 'paciente') {
-    if (state.pacientes.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
-    const novo = { id: state.proximoIdPaciente++, nome, email, senha };
-    state.pacientes.push(novo);
-    state.usuario = { tipo: 'paciente', id: novo.id, nome: novo.nome };
-    abaPaciente = 'profissionais';
-  } else {
+  if (!nome || !email || !senha) {
+    mensagemErro('Preencha os campos obrigatórios.');
+    return;
+  }
+
+  const tipo = tipoContaSelecionado === 'paciente'
+    ? 'paciente'
+    : 'profissional';
+
+  const dadosCadastro = {
+    nome,
+    tipo
+  };
+
+  if (tipo === 'profissional') {
     const profissao = document.getElementById('cad-profissao').value.trim();
-    if (!profissao) { mensagemErro('Preencha sua profissão.'); return; }
-    if (state.profissionais.some(p => p.email === email)) { mensagemErro('E-mail já cadastrado.'); return; }
+
+    if (!profissao) {
+      mensagemErro('Preencha sua profissão.');
+      return;
+    }
+
     const especialidade = document.getElementById('cad-especialidade').value.trim();
     const descricao = document.getElementById('cad-descricao').value.trim();
-    const modalidadeAtendimento = document.getElementById('cad-modalidade').value;
+    const modalidade = document.getElementById('cad-modalidade').value;
     const localAtendimento = document.getElementById('cad-local')?.value.trim() || '';
 
-    // Clínica: usa a escolhida; se for nova, cria agora (evita duplicar pelo nome)
-    let clinica = null;
+    let clinicaNome = '';
+
     if (cadClinica) {
-      if (cadClinica.id) clinica = getClinica(cadClinica.id);
-      else {
-        clinica = state.clinicas.find(c => normTxt(c.nome) === normTxt(cadClinica.novo));
-        if (!clinica) {
-          const idNovo = state.proximoIdClinica++;
-          clinica = { id: idNovo, nome: cadClinica.novo, especialidade: '', descricao: '', icone: '🏥', endereco: '', convenios: [],
-            codigoConvite: gerarCodigoConvite(), email: `clinica${idNovo}@email.com`, senha: '123', criadaEm: new Date().toISOString() };
-          state.clinicas.push(clinica);
-        }
+      if (cadClinica.id) {
+        clinicaNome = getClinica(cadClinica.id)?.nome || '';
+      } else {
+        clinicaNome = cadClinica.novo || '';
       }
     }
-    const novo = {
-      id: state.proximoIdProfissional++, nome, email, senha, profissao,
-      especialidade: especialidade || profissao,
-      descricao: descricao || 'Profissional cadastrado no Vezzo.',
-      avatar: '🧑‍⚕️',
-      clinicaId: clinica ? clinica.id : null, clinicaNome: clinica ? clinica.nome : '',
-      modalidadeAtendimento: modalidadeAtendimento || 'presencial',
-      localAtendimento: modalidadeAtendimento !== 'online' ? localAtendimento : '',
-    };
-    state.profissionais.push(novo);
-    cadClinica = null;
-    state.usuario = { tipo: 'profissional', id: novo.id, nome: novo.nome, profissao: novo.profissao };
-    state.agendas.push({ id: state.proximoIdAgenda++, profissionalId: novo.id, nome: 'Geral', criadaEm: new Date().toISOString(), prioridade: 1 });
-    agendaSelecionadaId = agendasDoProfissional(novo.id)[0]?.id ?? null;
-    mostrarToast(clinica ? `Cadastro concluído! Você está vinculado a ${clinica.nome}.` : 'Cadastro concluído! Você já aparece na busca dos pacientes.');
+
+    dadosCadastro.profissao = profissao;
+    dadosCadastro.especialidade = especialidade || profissao;
+    dadosCadastro.descricao = descricao || 'Profissional cadastrado no Vezzo.';
+    dadosCadastro.modalidade = modalidade || 'presencial';
+    dadosCadastro.local_atendimento = modalidade !== 'online'
+      ? localAtendimento
+      : '';
+    dadosCadastro.clinica_nome = clinicaNome;
   }
-  render();
+
+  try {
+    const { data, error } = await supabaseClient.auth.signUp({
+      email,
+      password: senha,
+      options: {
+        data: dadosCadastro
+      }
+    });
+
+    if (error) {
+      mensagemErro('Não foi possível realizar o cadastro: ' + error.message);
+      return;
+    }
+
+    if (data.user) {
+      cadClinica = null;
+
+      mostrarToast(
+        'Cadastro realizado! Confira seu e-mail para confirmar sua conta.'
+      );
+    }
+
+  } catch (erro) {
+    console.error('Erro no cadastro:', erro);
+    mensagemErro('Ocorreu um erro ao tentar realizar o cadastro.');
+  }
 }
+
 
 // Convênios de demonstração (estava definido, mas nunca era chamado)
 migrarDemoConvenios();
