@@ -3252,8 +3252,9 @@ async function fazerCadastro() {
       email,
       password: senha,
       options: {
-        data: dadosCadastro
-      }
+  emailRedirectTo: 'https://brennoo05.github.io/Vezzo/',
+  data: dadosCadastro
+}
     });
 
     if (error) {
