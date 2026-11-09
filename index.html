@@ -1393,31 +1393,105 @@ function alternarTipoConta(tipo){
   render();
 }
 
-function fazerLogin(){
+
+async function fazerLogin() {
   const email = document.getElementById('login-email').value.trim();
   const senha = document.getElementById('login-senha').value;
-  
-  if (tipoContaSelecionado === 'paciente') {
-    const p = state.pacientes.find(p => p.email === email && p.senha === senha);
-    if (!p) { mensagemErro('E-mail ou senha inválidos.'); return; }
-    state.usuario = { tipo: 'paciente', id: p.id, nome: p.nome };
-    state.clinicaSelecionadaId = null;
-    state.profissionalSelecionadoId = null;
-    state.agendaAberta = false;
-    abaPaciente = 'profissionais';
-  } else if (tipoContaSelecionado === 'clinica') {
-    const c = state.clinicas.find(c => c.email === email && c.senha === senha);
-    if (!c) { mensagemErro('E-mail ou senha inválidos.'); return; }
-    state.usuario = { tipo: 'clinica', id: c.id, nome: c.nome };
-  } else {
-    const p = state.profissionais.find(p => p.email === email && p.senha === senha);
-    if (!p) { mensagemErro('E-mail ou senha inválidos.'); return; }
-    state.usuario = { tipo: 'profissional', id: p.id, nome: p.nome, profissao: p.profissao };
-    abaProfissional = 'painel';
-    agendaSelecionadaId = agendasDoProfissional(p.id)[0]?.id ?? null;
+
+  if (!email || !senha) {
+    mensagemErro('Preencha o e-mail e a senha.');
+    return;
   }
-  render();
+
+  if (tipoContaSelecionado === 'clinica') {
+    mensagemErro('O login de clínicas ainda não está disponível.');
+    return;
+  }
+
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({
+      email: email,
+      password: senha
+    });
+
+    if (error) {
+      mensagemErro('E-mail ou senha inválidos.');
+      return;
+    }
+
+    const usuarioId = data.user.id;
+
+    const { data: perfil, error: erroPerfil } = await supabaseClient
+      .from('profiles')
+      .select('id, nome, email, tipo')
+      .eq('id', usuarioId)
+      .single();
+
+    if (erroPerfil || !perfil) {
+      mensagemErro('Não foi possível carregar seu perfil.');
+      return;
+    }
+
+    if (perfil.tipo !== tipoContaSelecionado) {
+      await supabaseClient.auth.signOut();
+      mensagemErro('Selecione o tipo de conta correto.');
+      return;
+    }
+
+    if (perfil.tipo === 'paciente') {
+      const { data: paciente, error: erroPaciente } = await supabaseClient
+        .from('pacientes')
+        .select('id')
+        .eq('profile_id', usuarioId)
+        .single();
+
+      if (erroPaciente || !paciente) {
+        mensagemErro('Não foi possível carregar seu cadastro de paciente.');
+        return;
+      }
+
+      state.usuario = {
+        tipo: 'paciente',
+        id: paciente.id,
+        nome: perfil.nome
+      };
+
+      state.clinicaSelecionadaId = null;
+      state.profissionalSelecionadoId = null;
+      state.agendaAberta = false;
+      abaPaciente = 'profissionais';
+
+    } else if (perfil.tipo === 'profissional') {
+      const { data: profissional, error: erroProfissional } = await supabaseClient
+        .from('profissionais')
+        .select('id, profissao')
+        .eq('profile_id', usuarioId)
+        .single();
+
+      if (erroProfissional || !profissional) {
+        mensagemErro('Não foi possível carregar seu cadastro profissional.');
+        return;
+      }
+
+      state.usuario = {
+        tipo: 'profissional',
+        id: profissional.id,
+        nome: perfil.nome,
+        profissao: profissional.profissao
+      };
+
+      abaProfissional = 'painel';
+      agendaSelecionadaId = agendasDoProfissional(profissional.id)[0]?.id ?? null;
+    }
+
+    render();
+
+  } catch (erro) {
+    console.error('Erro no login:', erro);
+    mensagemErro('Ocorreu um erro ao tentar entrar.');
+  }
 }
+
 
 function fazerCadastro(){
   const nome = document.getElementById('cad-nome').value.trim();
