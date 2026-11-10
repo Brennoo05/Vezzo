@@ -1493,6 +1493,95 @@ async function fazerLogin() {
 }
 
 
+async function restaurarSessaoSupabase() {
+  try {
+    const { data: { session }, error } =
+      await supabaseClient.auth.getSession();
+
+    if (error) throw error;
+
+    // Não existe sessão ativa: mostrar a tela de login.
+    if (!session) {
+      state.usuario = null;
+      render();
+      return;
+    }
+
+    const usuarioId = session.user.id;
+
+    // Recuperar o perfil do usuário autenticado.
+    const { data: perfil, error: erroPerfil } = await supabaseClient
+      .from('profiles')
+      .select('id, nome, email, tipo')
+      .eq('id', usuarioId)
+      .single();
+
+    if (erroPerfil || !perfil) {
+      throw erroPerfil || new Error('Perfil não encontrado.');
+    }
+
+    if (perfil.tipo === 'paciente') {
+      const { data: paciente, error: erroPaciente } = await supabaseClient
+        .from('pacientes')
+        .select('id')
+        .eq('profile_id', usuarioId)
+        .single();
+
+      if (erroPaciente || !paciente) {
+        throw erroPaciente || new Error('Paciente não encontrado.');
+      }
+
+      state.usuario = {
+        tipo: 'paciente',
+        id: paciente.id,
+        nome: perfil.nome
+      };
+
+      abaPaciente = 'profissionais';
+      state.clinicaSelecionadaId = null;
+      state.profissionalSelecionadoId = null;
+      state.agendaAberta = false;
+
+    } else if (perfil.tipo === 'profissional') {
+      const { data: profissional, error: erroProfissional } =
+        await supabaseClient
+          .from('profissionais')
+          .select('id, profissao')
+          .eq('profile_id', usuarioId)
+          .single();
+
+      if (erroProfissional || !profissional) {
+        throw erroProfissional || new Error('Profissional não encontrado.');
+      }
+
+      state.usuario = {
+        tipo: 'profissional',
+        id: profissional.id,
+        nome: perfil.nome,
+        profissao: profissional.profissao
+      };
+
+      abaProfissional = 'painel';
+      agendaSelecionadaId =
+        agendasDoProfissional(profissional.id)[0]?.id ?? null;
+
+    } else {
+      throw new Error('Tipo de conta não reconhecido.');
+    }
+
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao restaurar sessão:', erro);
+    state.usuario = null;
+    render();
+    mensagemErro('Não foi possível recuperar sua sessão. Entre novamente.');
+  }
+}
+
+
+
+
 function fazerCadastro(){
   const nome = document.getElementById('cad-nome').value.trim();
   const email = document.getElementById('cad-email').value.trim();
@@ -3298,8 +3387,16 @@ async function fazerCadastro() {
 migrarDemoConvenios();
 /* ===== fim VEZZO-CLINICA-WIDGET ===== */
 
-render();
-setInterval(() => { const n = state.notificacoes.length; processarLembretes(); salvarDados(); if (state.notificacoes.length !== n) render(); }, 60000);
+
+restaurarSessaoSupabase();
+
+setInterval(() => {
+  const n = state.notificacoes.length;
+  processarLembretes();
+  salvarDados();
+  if (state.notificacoes.length !== n) render();
+}, 60000);
+
 </script>
 
 
