@@ -568,16 +568,53 @@ function selecionarAgenda(id){
   calendarioAberto = false;
   render();
 }
-function criarAgenda(){
+
+async function criarAgenda() {
   const input = document.getElementById('nova-agenda-nome');
   const nome = input?.value?.trim();
-  if(!nome) return mensagemErro('Dê um nome para a nova agenda (ex.: Convênio Amil, Particular...).');
-  const agenda = { id: state.proximoIdAgenda++, profissionalId: state.usuario.id, nome, criadaEm: new Date().toISOString(), prioridade: agendasDoProfissional(state.usuario.id).length + 1 };
-  state.agendas.push(agenda);
-  agendaSelecionadaId = agenda.id;
-  mostrarToast(`Agenda "${nome}" criada.`, 'success');
-  render();
+
+  if (!nome) {
+    return mensagemErro('Dê um nome para a nova agenda (ex.: Convênio Amil, Particular...).');
+  }
+
+  const profissionalId = state.usuario.id;
+  const prioridade = agendasDoProfissional(profissionalId).length + 1;
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('agendas')
+      .insert({
+        profissional_id: profissionalId,
+        nome,
+        prioridade
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    const agenda = {
+      id: state.proximoIdAgenda++,
+      supabaseId: data.id,
+      profissionalId,
+      nome: data.nome,
+      criadaEm: data.criada_em,
+      prioridade: data.prioridade
+    };
+
+    state.agendas.push(agenda);
+    agendaSelecionadaId = agenda.id;
+
+    salvarDados();
+    mostrarToast(`Agenda "${nome}" criada.`, 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao criar agenda:', erro);
+    mensagemErro('Não foi possível salvar a agenda no Supabase.');
+  }
 }
+
 function iniciarRenomeioAgenda(id){
   renomeandoAgendaId = id;
   confirmandoExclusaoAgendaId = null;
@@ -587,16 +624,40 @@ function cancelarRenomeioAgenda(){
   renomeandoAgendaId = null;
   render();
 }
-function salvarNomeAgenda(id){
+
+async function salvarNomeAgenda(id) {
   const input = document.getElementById(`renome-agenda-${id}`);
   const nome = input?.value?.trim();
-  if(!nome) return mensagemErro('O nome da agenda não pode ficar em branco.');
-  const agenda = state.agendas.find(a=>a.id===id);
-  if(agenda) agenda.nome = nome;
-  renomeandoAgendaId = null;
-  mostrarToast('Agenda renomeada.', 'success');
-  render();
+
+  if (!nome) {
+    return mensagemErro('O nome da agenda não pode ficar em branco.');
+  }
+
+  const agenda = state.agendas.find(a => a.id === id);
+  if (!agenda) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('agendas')
+      .update({ nome })
+      .eq('id', agenda.supabaseId)
+      .eq('profissional_id', state.usuario.id);
+
+    if (error) throw error;
+
+    agenda.nome = nome;
+    renomeandoAgendaId = null;
+
+    salvarDados();
+    mostrarToast('Agenda renomeada.', 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao renomear agenda:', erro);
+    mensagemErro('Não foi possível renomear a agenda.');
+  }
 }
+
 function pedirExclusaoAgenda(id){
   confirmandoExclusaoAgendaId = id;
   renomeandoAgendaId = null;
@@ -606,34 +667,116 @@ function cancelarExclusaoAgenda(){
   confirmandoExclusaoAgendaId = null;
   render();
 }
-function excluirAgenda(id){
+
+async function excluirAgenda(id) {
   const minhas = agendasDoProfissional(state.usuario.id);
-  if(minhas.length <= 1){ confirmandoExclusaoAgendaId=null; return mensagemErro('Você precisa manter ao menos uma agenda.'); }
-  const ocupados = state.horarios.filter(h=>h.agendaId===id && (h.pacienteId || h.fila.length));
-  if(ocupados.length){ confirmandoExclusaoAgendaId=null; return mensagemErro('Não é possível excluir: há consultas confirmadas ou fila nesta agenda.'); }
-  const nomeAgenda = state.agendas.find(a=>a.id===id)?.nome || 'Agenda';
-  state.horarios = state.horarios.filter(h=>h.agendaId!==id);
-  state.recorrencias = state.recorrencias.filter(r=>r.agendaId!==id);
-  state.bloqueios = state.bloqueios.filter(b=>b.agendaId!==id);
-  state.agendas = state.agendas.filter(a=>a.id!==id);
-  confirmandoExclusaoAgendaId = null;
-  if(agendaSelecionadaId===id){
-    agendaSelecionadaId = agendasDoProfissional(state.usuario.id)[0]?.id ?? null;
+
+  if (minhas.length <= 1) {
+    confirmandoExclusaoAgendaId = null;
+    return mensagemErro('Você precisa manter ao menos uma agenda.');
   }
-  mostrarToast(`Agenda "${nomeAgenda}" excluída.`, 'info');
-  render();
+
+  const ocupados = state.horarios.filter(
+    h => h.agendaId === id && (h.pacienteId || h.fila.length)
+  );
+
+  if (ocupados.length) {
+    confirmandoExclusaoAgendaId = null;
+    return mensagemErro('Não é possível excluir: há consultas confirmadas ou fila nesta agenda.');
+  }
+
+  const agenda = state.agendas.find(a => a.id === id);
+  if (!agenda) return;
+
+  try {
+    const { error: erroHorarios } = await supabaseClient
+      .from('horarios')
+      .delete()
+      .eq('agenda_id', agenda.supabaseId)
+      .eq('profissional_id', state.usuario.id);
+
+    if (erroHorarios) throw erroHorarios;
+
+    const { error: erroAgenda } = await supabaseClient
+      .from('agendas')
+      .delete()
+      .eq('id', agenda.supabaseId)
+      .eq('profissional_id', state.usuario.id);
+
+    if (erroAgenda) throw erroAgenda;
+
+    const nomeAgenda = agenda.nome;
+
+    state.horarios = state.horarios.filter(h => h.agendaId !== id);
+    state.recorrencias = state.recorrencias.filter(r => r.agendaId !== id);
+    state.bloqueios = state.bloqueios.filter(b => b.agendaId !== id);
+    state.agendas = state.agendas.filter(a => a.id !== id);
+
+    confirmandoExclusaoAgendaId = null;
+
+    if (agendaSelecionadaId === id) {
+      agendaSelecionadaId = agendasDoProfissional(state.usuario.id)[0]?.id ?? null;
+    }
+
+    salvarDados();
+    mostrarToast(`Agenda "${nomeAgenda}" excluída.`, 'info');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao excluir agenda:', erro);
+    mensagemErro('Não foi possível excluir a agenda.');
+  }
 }
 
-function moverPrioridadeAgenda(id, direcao){
-  const minhas = agendasDoProfissional(state.usuario.id).slice().sort((a,b)=>(a.prioridade??0)-(b.prioridade??0));
-  const idx = minhas.findIndex(a=>a.id===id);
+
+
+async function moverPrioridadeAgenda(id, direcao) {
+  const minhas = agendasDoProfissional(state.usuario.id)
+    .slice()
+    .sort((a, b) => (a.prioridade ?? 0) - (b.prioridade ?? 0));
+
+  const idx = minhas.findIndex(a => a.id === id);
   const alvoIdx = idx + direcao;
-  if (idx===-1 || alvoIdx<0 || alvoIdx>=minhas.length) return;
-  const a = minhas[idx], b = minhas[alvoIdx];
-  const tmp = a.prioridade; a.prioridade = b.prioridade; b.prioridade = tmp;
-  mostrarToast('Ordem de prioridade atualizada.', 'success');
-  render();
+
+  if (idx === -1 || alvoIdx < 0 || alvoIdx >= minhas.length) return;
+
+  const a = minhas[idx];
+  const b = minhas[alvoIdx];
+
+  const prioridadeA = a.prioridade;
+  const prioridadeB = b.prioridade;
+
+  try {
+    const atualizacoes = await Promise.all([
+      supabaseClient
+        .from('agendas')
+        .update({ prioridade: prioridadeB })
+        .eq('id', a.supabaseId)
+        .eq('profissional_id', state.usuario.id),
+
+      supabaseClient
+        .from('agendas')
+        .update({ prioridade: prioridadeA })
+        .eq('id', b.supabaseId)
+        .eq('profissional_id', state.usuario.id)
+    ]);
+
+    const erro = atualizacoes.find(resultado => resultado.error)?.error;
+    if (erro) throw erro;
+
+    a.prioridade = prioridadeB;
+    b.prioridade = prioridadeA;
+
+    salvarDados();
+    mostrarToast('Ordem de prioridade atualizada.', 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao alterar prioridade:', erro);
+    mensagemErro('Não foi possível atualizar a prioridade.');
+  }
 }
+
 
 function semearDados(){
   state.horarios = [];
@@ -1394,6 +1537,74 @@ function alternarTipoConta(tipo){
 }
 
 
+
+async function carregarAgendasHorariosSupabase(profissionalId) {
+  try {
+    const { data: agendas, error: erroAgendas } = await supabaseClient
+      .from('agendas')
+      .select('*')
+      .eq('profissional_id', profissionalId)
+      .order('prioridade');
+
+    if (erroAgendas) throw erroAgendas;
+
+    const { data: horarios, error: erroHorarios } = await supabaseClient
+      .from('horarios')
+      .select('*')
+      .eq('profissional_id', profissionalId);
+
+    if (erroHorarios) throw erroHorarios;
+
+    const agendasLocais = agendas.map(a => ({
+      id: state.proximoIdAgenda++,
+      supabaseId: a.id,
+      profissionalId,
+      nome: a.nome,
+      prioridade: a.prioridade,
+      criadaEm: a.criada_em
+    }));
+
+    const idsAgendas = new Map(
+      agendasLocais.map(a => [a.supabaseId, a.id])
+    );
+
+    const horariosLocais = horarios.map(h => ({
+      id: state.proximoIdHorario++,
+      supabaseId: h.id,
+      profissionalId,
+      agendaId: idsAgendas.get(h.agenda_id),
+      data: h.data,
+      hora: h.hora.slice(0, 5),
+      modalidade: h.modalidade,
+      status: h.status,
+      pacienteId: null,
+      fila: [],
+      filaOrigem: []
+    }));
+
+    state.agendas = [
+      ...state.agendas.filter(a => a.profissionalId !== profissionalId),
+      ...agendasLocais
+    ];
+
+    state.horarios = [
+      ...state.horarios.filter(h => h.profissionalId !== profissionalId),
+      ...horariosLocais
+    ];
+
+    agendaSelecionadaId = agendasLocais[0]?.id ?? null;
+
+    salvarDados();
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao carregar agendas e horários:', erro);
+    mensagemErro('Não foi possível carregar as agendas e horários.');
+  }
+}
+
+
+
 async function fazerLogin() {
   const email = document.getElementById('login-email').value.trim();
   const senha = document.getElementById('login-senha').value;
@@ -1481,7 +1692,7 @@ async function fazerLogin() {
       };
 
       abaProfissional = 'painel';
-      agendaSelecionadaId = agendasDoProfissional(profissional.id)[0]?.id ?? null;
+      await carregarAgendasHorariosSupabase(profissional.id);
     }
 
     render();
@@ -1491,6 +1702,8 @@ async function fazerLogin() {
     mensagemErro('Ocorreu um erro ao tentar entrar.');
   }
 }
+
+
 
 
 async function restaurarSessaoSupabase() {
@@ -2618,18 +2831,86 @@ function abrirHistoricoPaciente(id){ historicoPacienteId = id; consultaDetalheId
 function fecharHistoricoPaciente(){ historicoPacienteId = null; render(); }
 function abrirNovoHorario(){ novoHorarioAberto = true; render(); }
 function fecharNovoHorario(){ novoHorarioAberto = false; render(); }
-function salvarNovoHorario(){
-  const data=document.getElementById('novo-hor-data')?.value;
-  const hora=document.getElementById('novo-hor-hora')?.value;
-  const modalidade=document.getElementById('novo-hor-modalidade')?.value || 'presencial';
-  const agendaId=Number(document.getElementById('novo-hor-agenda')?.value || agendaSelecionadaId);
-  if(!data || !hora) return mensagemErro('Informe a data e o horário.');
-  if(data < hojeISO()) return mensagemErro('A data precisa ser hoje ou futura.');
-  if(!agendaId) return mensagemErro('Selecione uma agenda.');
-  const r=adicionarHorarioPorData(state.usuario.id,data,hora,modalidade,agendaId);
-  if(!r.ok) return mensagemErro(r.motivo==='bloqueado'?'Essa data está bloqueada.':'Já existe um horário nesse dia e hora nesta agenda.');
-  novoHorarioAberto=false; state.diaSelecionado=data; agendaSelecionadaId=agendaId; mostrarToast('Novo horário criado.','success'); render();
+
+async function salvarNovoHorario() {
+  const data = document.getElementById('novo-hor-data')?.value;
+  const hora = document.getElementById('novo-hor-hora')?.value;
+  const modalidade = document.getElementById('novo-hor-modalidade')?.value || 'presencial';
+  const agendaId = Number(document.getElementById('novo-hor-agenda')?.value || agendaSelecionadaId);
+
+  if (!data || !hora) {
+    return mensagemErro('Informe a data e o horário.');
+  }
+
+  if (data < hojeISO()) {
+    return mensagemErro('A data precisa ser hoje ou futura.');
+  }
+
+  if (!agendaId) {
+    return mensagemErro('Selecione uma agenda.');
+  }
+
+  const agenda = state.agendas.find(a => a.id === agendaId);
+
+  if (!agenda?.supabaseId) {
+    return mensagemErro('Agenda não encontrada no Supabase. Atualize a página e tente novamente.');
+  }
+
+  const resultado = adicionarHorarioPorData(
+    state.usuario.id,
+    data,
+    hora,
+    modalidade,
+    agendaId
+  );
+
+  if (!resultado.ok) {
+    return mensagemErro(
+      resultado.motivo === 'bloqueado'
+        ? 'Essa data está bloqueada.'
+        : 'Já existe um horário nesse dia e hora nesta agenda.'
+    );
+  }
+
+  const horario = state.horarios[state.horarios.length - 1];
+
+  try {
+    const { data: horarioSalvo, error } = await supabaseClient
+      .from('horarios')
+      .insert({
+        profissional_id: state.usuario.id,
+        agenda_id: agenda.supabaseId,
+        data,
+        hora,
+        modalidade,
+        status: 'livre'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    horario.supabaseId = horarioSalvo.id;
+
+    salvarDados();
+
+    novoHorarioAberto = false;
+    state.diaSelecionado = data;
+    agendaSelecionadaId = agendaId;
+
+    mostrarToast('Novo horário criado.', 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao salvar horário:', erro);
+
+    state.horarios = state.horarios.filter(h => h.id !== horario.id);
+
+    mensagemErro('Não foi possível salvar o horário no Supabase.');
+    render();
+  }
 }
+
 function selecionarVisaoAgenda(visao){ visaoAgendaProfissional=visao; render(); }
 function datasDaSemana(iso){
   const d=dataParaDate(iso), domingo=new Date(d); domingo.setDate(d.getDate()-d.getDay());
@@ -2988,6 +3269,129 @@ function badgeStatus(status){
   return `<span class="badge ${classe}">${label}</span>`;
 }
 
+
+async function excluirHorarioSupabase(id) {
+  const horario = state.horarios.find(h => h.id === id);
+
+  if (!horario) return;
+
+  if (horario.status !== 'livre' || horario.pacienteId || horario.fila.length) {
+    return mensagemErro('Não é possível excluir um horário ocupado ou com pacientes na fila.');
+  }
+
+  if (!horario.supabaseId) {
+    return mensagemErro('Este horário ainda não está vinculado ao Supabase.');
+  }
+
+  if (!confirm('Deseja realmente excluir este horário?')) return;
+
+  try {
+    const { error } = await supabaseClient
+      .from('horarios')
+      .delete()
+      .eq('id', horario.supabaseId)
+      .eq('profissional_id', state.usuario.id);
+
+    if (error) throw error;
+
+    state.horarios = state.horarios.filter(h => h.id !== id);
+
+    salvarDados();
+    mostrarToast('Horário excluído com sucesso.', 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao excluir horário:', erro);
+    mensagemErro('Não foi possível excluir o horário.');
+  }
+}
+
+
+async function editarHorarioSupabase(id) {
+  const horario = state.horarios.find(h => h.id === id);
+
+  if (!horario) return;
+
+  if (horario.status !== 'livre' || horario.pacienteId || (horario.fila || []).length) {
+    return mensagemErro('Não é possível editar um horário ocupado ou com pacientes na fila.');
+  }
+
+  if (!horario.supabaseId) {
+    return mensagemErro('Este horário ainda não está vinculado ao Supabase.');
+  }
+
+  const novaData = prompt('Nova data (AAAA-MM-DD):', horario.data);
+  if (novaData === null) return;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) {
+    return mensagemErro('Informe uma data válida no formato AAAA-MM-DD.');
+  }
+
+  const novaHora = prompt('Novo horário (HH:MM):', horario.hora);
+  if (novaHora === null) return;
+
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(novaHora)) {
+    return mensagemErro('Informe um horário válido no formato HH:MM.');
+  }
+
+  const novaModalidade = prompt(
+    'Modalidade (presencial ou online):',
+    horario.modalidade
+  );
+
+  if (novaModalidade === null) return;
+
+  const modalidade = novaModalidade.trim().toLowerCase();
+
+  if (!['presencial', 'online'].includes(modalidade)) {
+    return mensagemErro('Modalidade inválida. Use presencial ou online.');
+  }
+
+  const conflito = state.horarios.find(h =>
+    h.id !== id &&
+    h.profissionalId === horario.profissionalId &&
+    h.agendaId === horario.agendaId &&
+    h.data === novaData &&
+    h.hora === novaHora
+  );
+
+  if (conflito) {
+    return mensagemErro('Já existe um horário nessa data e hora para esta agenda.');
+  }
+
+  if (horarioBloqueado(horario.profissionalId, novaData, horario.agendaId)) {
+    return mensagemErro('Essa data possui um bloqueio nesta agenda.');
+  }
+
+  try {
+    const { error } = await supabaseClient
+      .from('horarios')
+      .update({
+        data: novaData,
+        hora: novaHora,
+        modalidade: modalidade
+      })
+      .eq('id', horario.supabaseId)
+      .eq('profissional_id', state.usuario.id);
+
+    if (error) throw error;
+
+    horario.data = novaData;
+    horario.hora = novaHora;
+    horario.modalidade = modalidade;
+
+    salvarDados();
+    mostrarToast('Horário atualizado com sucesso.', 'success');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao editar horário:', erro);
+    mensagemErro('Não foi possível atualizar o horário.');
+  }
+}
+
+
+
 function cartaoHorario(h, visao = 'paciente'){
   const isProf = visao === 'profissional';
   
@@ -3039,16 +3443,25 @@ function cartaoHorario(h, visao = 'paciente'){
       ${h.fila.map((pid, i) => `<div>${i+1}. ${escaparHtml(getPaciente(pid)?.nome||'Paciente')}${nomeAgendaOrigem((h.filaOrigem||[])[i])}</div>`).join('')}
     </div>` : '';
 
-  const acoes = h.status === 'concluido' ? `<span class="text-xs text-[var(--ink-soft)] border px-2 py-1 rounded">Encerrado</span>` :
-    (h.status === 'livre' ? (espelho
-      ? `<span class="text-xs text-[var(--ink-soft)]">Reservado em outra agenda${espelho.fila.length ? ` · ${espelho.fila.length} na fila` : ''}</span>`
-      : (dentroJanelaExclusividade(h)
-        ? `<span class="text-xs text-[var(--ink-soft)]">🔒 Exclusivo até ${formatarLimiteExclusividade(h)}</span>`
-        : `<span class="text-xs text-[var(--ink-soft)]">Sem paciente</span>`)) : `
-      <div class="flex flex-col gap-2">
-        <button onclick="marcarConsultaDada(${h.id})" class="btn-primary px-3 py-1.5 text-xs font-medium w-full">Compareceu</button>
-        <button onclick="registrarFalta(${h.id})" class="btn-brick px-3 py-1.5 text-xs font-medium w-full">Faltou</button>
-      </div>`);
+const acoes =
+  h.status === 'concluido'
+    ? `<span class="text-xs text-[var(--ink-soft)] border px-2 py-1 rounded">Encerrado</span>`
+    : h.status === 'livre'
+      ? (
+          espelho
+            ? `<span class="text-xs text-[var(--ink-soft)]">Reservado em outra agenda${espelho.fila.length ? ` · ${espelho.fila.length} na fila` : ''}</span>`
+            : dentroJanelaExclusividade(h)
+              ? `<span class="text-xs text-[var(--ink-soft)]">🔒 Exclusivo até ${formatarLimiteExclusividade(h)}</span>`
+              : `<div class="flex flex-col items-end gap-2">
+                  <span class="text-xs text-[var(--ink-soft)]">Sem paciente</span>
+                  <button onclick="editarHorarioSupabase(${h.id})" class="btn-primary px-3 py-1.5 text-xs font-medium">Editar horário</button>
+                  <button onclick="excluirHorarioSupabase(${h.id})" class="btn-brick px-3 py-1.5 text-xs font-medium">Excluir horário</button>
+                </div>`
+        )
+      : `<div class="flex flex-col gap-2">
+          <button onclick="marcarConsultaDada(${h.id})" class="btn-primary px-3 py-1.5 text-xs font-medium w-full">Compareceu</button>
+          <button onclick="registrarFalta(${h.id})" class="btn-brick px-3 py-1.5 text-xs font-medium w-full">Faltou</button>
+        </div>`;
 
   return `
     <div class="card p-4 bg-white cartao-horario flex items-start justify-between gap-3">
