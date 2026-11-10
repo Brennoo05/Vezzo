@@ -1560,18 +1560,35 @@ function alternarModalidadeCadastro(v){
   if (localWrap) localWrap.style.display = (v === 'online') ? 'none' : 'block';
 }
 
-function sair(){
-  state.usuario = null;
-  state.clinicaSelecionadaId = null;
-  abaPaciente = 'profissionais';
-  abaProfissional = 'painel';
-  agendaSelecionadaId = null;
-  agendaSelecionadaPacienteId = null;
-  renomeandoAgendaId = null;
-  confirmandoExclusaoAgendaId = null;
-  notificacoesAbertas = false;
-  render();
+
+async function sair() {
+  try {
+    const { error } = await supabaseClient.auth.signOut();
+
+    if (error) {
+      console.error('Erro ao sair:', error);
+      mensagemErro('Não foi possível encerrar a sessão.');
+      return;
+    }
+
+    state.usuario = null;
+    state.clinicaSelecionadaId = null;
+    abaPaciente = 'profissionais';
+    abaProfissional = 'painel';
+    agendaSelecionadaId = null;
+    agendaSelecionadaPacienteId = null;
+    renomeandoAgendaId = null;
+    confirmandoExclusaoAgendaId = null;
+    notificacoesAbertas = false;
+
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao sair:', erro);
+    mensagemErro('Ocorreu um erro ao encerrar a sessão.');
+  }
 }
+
 
 function irParaAbaProfissional(aba){
   abaProfissional = aba;
