@@ -1774,6 +1774,26 @@ async function restaurarSessaoSupabase() {
         profissao: profissional.profissao
       };
 
+      const profissionalLocal = state.profissionais.find(
+  p => p.id === profissional.id
+);
+
+if (!profissionalLocal) {
+  state.profissionais.push({
+    id: profissional.id,
+    nome: perfil.nome,
+    email: perfil.email,
+    profissao: profissional.profissao,
+    especialidade: profissional.profissao,
+    descricao: 'Profissional cadastrado no Vezzo.',
+    avatar: '🧑‍⚕️',
+    clinicaId: null,
+    clinicaNome: '',
+    modalidadeAtendimento: 'presencial',
+    localAtendimento: ''
+  });
+}
+
       abaProfissional = 'painel';
       agendaSelecionadaId =
         agendasDoProfissional(profissional.id)[0]?.id ?? null;
