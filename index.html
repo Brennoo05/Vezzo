@@ -2116,8 +2116,7 @@ if (!profissionalLocal) {
 }
 
       abaProfissional = 'painel';
-      agendaSelecionadaId =
-        agendasDoProfissional(profissional.id)[0]?.id ?? null;
+await carregarAgendasHorariosSupabase(profissional.id);
 
     } else {
       throw new Error('Tipo de conta não reconhecido.');
