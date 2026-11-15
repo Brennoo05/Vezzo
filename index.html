@@ -1470,18 +1470,92 @@ function agendar(pacienteId, horarioId, opcoes = {}){
 
 /* Libera um horário (sem paciente) e promove automaticamente o próximo da fila, se houver.
    Função central reutilizada tanto pelo cancelamento do profissional quanto pelo cancelamento do paciente. */
-function agendarComFeedback(pacienteId, horarioId, botao){
-  if (botao) { botao.disabled = true; botao.dataset.originalText = botao.textContent; botao.textContent = 'Agendando…'; botao.style.opacity = '.7'; }
-  setTimeout(() => {
-    const antes = getHorario(horarioId)?.status;
-    agendar(pacienteId, horarioId);
-    const depois = getHorario(horarioId)?.status;
-    if (depois && depois !== antes) {
-      const c = state.consultas.filter(x => x.pacienteId===pacienteId && x.horarioId===horarioId).pop();
-      const pend = c && state.confirmacoes[c.id]?.status === 'pendente';
-      mostrarToast(depois === 'lotado' ? 'Você entrou na fila de espera.' : (pend ? 'Consulta reservada! Confirme até ' + formatarPrazoConfirmacao(getHorario(horarioId)) + ' para garantir a vaga.' : 'Consulta agendada com sucesso.'));
+async function agendarComFeedback(pacienteId, horarioId, botao) {
+  const h = getHorario(horarioId);
+
+  if (!h) {
+    mensagemErro('Horário não encontrado.');
+    return;
+  }
+
+  const alvo = (h.status === 'livre' && espelhoReservado(h))
+    ? espelhoReservado(h)
+    : h;
+
+  // Reserva de horário real no Supabase.
+  if (alvo.status === 'livre' && alvo.supabaseId) {
+    if (pacienteTemConflito(pacienteId, h.data, h.hora)) {
+      mensagemErro('Você já tem uma consulta nesse mesmo dia e horário.');
+      return;
     }
-  }, 180);
+
+    if (horarioJaEncerrado(h.data, h.hora)) {
+      mensagemErro('Este horário já foi encerrado.');
+      return;
+    }
+
+    if (dentroJanelaExclusividade(h)) {
+      mensagemErro('Este horário ainda está reservado com exclusividade para outra agenda.');
+      return;
+    }
+
+    if (botao) {
+      botao.disabled = true;
+      botao.textContent = 'Agendando…';
+    }
+
+    try {
+      const { data: consultaSupabaseId, error } = await supabaseClient
+        .rpc('reservar_horario_vezzo', {
+          p_horario_id: alvo.supabaseId
+        });
+
+      if (error) throw error;
+
+      // Atualiza também o estado local da aplicação.
+      agendar(pacienteId, horarioId);
+
+      const consultaLocal = state.consultas
+        .filter(c => c.pacienteId === pacienteId && c.horarioId === alvo.id)
+        .pop();
+
+      if (consultaLocal) {
+        consultaLocal.supabaseId = consultaSupabaseId;
+      }
+
+      salvarDados();
+      mostrarToast('Consulta agendada com sucesso.');
+      render();
+
+    } catch (erro) {
+      console.error('Erro ao agendar no Supabase:', erro);
+      mensagemErro(
+        erro.message || 'Não foi possível realizar o agendamento.'
+      );
+
+      if (botao) {
+        botao.disabled = false;
+        botao.textContent = 'Agendar';
+      }
+    }
+
+    return;
+  }
+
+  // Mantém o comportamento atual da fila de espera.
+  const antes = getHorario(horarioId)?.status;
+
+  agendar(pacienteId, horarioId);
+
+  const depois = getHorario(horarioId)?.status;
+
+  if (depois && depois !== antes) {
+    mostrarToast(
+      depois === 'lotado'
+        ? 'Você entrou na fila de espera.'
+        : 'Consulta agendada.'
+    );
+  }
 }
 
 function liberarHorarioEPromover(horarioId, consultaCanceladaId){
