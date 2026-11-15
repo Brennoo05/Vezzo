@@ -1963,6 +1963,108 @@ async function carregarAgendaPacienteSupabase(profissionalLocalId) {
 
 
 
+async function vincularConsultasAosHorariosPaciente() {
+  const pacienteId = state.usuario?.id;
+  if (!pacienteId) return;
+
+  state.consultas
+    .filter(c => c.pacienteId === pacienteId && c.horarioSupabaseId)
+    .forEach(c => {
+      const horario = state.horarios.find(
+        h => h.supabaseId === c.horarioSupabaseId
+      );
+
+      if (horario) {
+        c.horarioId = horario.id;
+
+        if (c.status === 'confirmada') {
+          horario.pacienteId = pacienteId;
+        }
+
+        if (c.status === 'fila' && !horario.fila.includes(pacienteId)) {
+          horario.fila.push(pacienteId);
+        }
+      }
+    });
+}
+
+async function carregarConsultasPacienteSupabase() {
+  try {
+    const pacienteId = state.usuario?.id;
+    if (!pacienteId) return;
+
+    const { data: consultas, error } = await supabaseClient
+      .from('consultas')
+      .select('id, paciente_id, horario_id, status, alerta_faltas')
+      .eq('paciente_id', pacienteId);
+
+    if (error) throw error;
+
+    state.consultas = state.consultas.filter(
+      c => c.pacienteId !== pacienteId
+    );
+
+    if (!consultas.length) {
+      salvarDados();
+      return;
+    }
+
+    const horariosIds = consultas.map(c => c.horario_id);
+
+    const { data: horariosBanco, error: erroHorarios } =
+      await supabaseClient
+        .from('horarios')
+        .select('id, profissional_id')
+        .in('id', horariosIds);
+
+    if (erroHorarios) throw erroHorarios;
+
+    const profissionaisIds = [
+      ...new Set(horariosBanco.map(h => h.profissional_id))
+    ];
+
+    for (const profissionalSupabaseId of profissionaisIds) {
+      const profissionalLocal = state.profissionais.find(
+        p => p.supabaseId === profissionalSupabaseId
+      );
+
+      if (profissionalLocal) {
+        await carregarAgendaPacienteSupabase(profissionalLocal.id);
+      }
+    }
+
+    for (const c of consultas) {
+      const horarioBanco = horariosBanco.find(
+        h => h.id === c.horario_id
+      );
+
+      const horarioLocal = state.horarios.find(
+        h => h.supabaseId === c.horario_id
+      );
+
+      if (!horarioBanco || !horarioLocal) continue;
+
+      state.consultas.push({
+        id: state.proximoIdConsulta++,
+        supabaseId: c.id,
+        pacienteId,
+        horarioId: horarioLocal.id,
+        horarioSupabaseId: c.horario_id,
+        status: c.status,
+        alertaFaltas: c.alerta_faltas
+      });
+    }
+
+    await vincularConsultasAosHorariosPaciente();
+
+    salvarDados();
+
+  } catch (erro) {
+    console.error('Erro ao carregar consultas do paciente:', erro);
+    throw erro;
+  }
+}
+
 
 
 async function carregarProfissionaisSupabase() {
