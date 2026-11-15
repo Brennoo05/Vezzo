@@ -1905,17 +1905,14 @@ async function carregarProfissionaisSupabase() {
 
     if (!profissionais.length) return;
 
-    const profileIds = profissionais.map(p => p.profile_id);
+  
+const { data: perfis, error: erroPerfis } = await supabaseClient
+  .rpc('listar_perfis_profissionais');
 
-    const { data: perfis, error: erroPerfis } =
-      await supabaseClient
-        .from('profiles')
-        .select('id, nome, email')
-        .in('id', profileIds);
+if (erroPerfis) throw erroPerfis;
 
-    if (erroPerfis) throw erroPerfis;
+const perfisPorId = new Map(perfis.map(p => [p.id, p]));
 
-    const perfisPorId = new Map(perfis.map(p => [p.id, p]));
     const clinicasPorNome = new Map();
     let proximoIdClinica = 1;
 
@@ -1946,7 +1943,7 @@ async function carregarProfissionaisSupabase() {
         supabaseId: p.id,
         profileId: p.profile_id,
         nome: perfil.nome,
-        email: perfil.email,
+        email: '',
         profissao: p.profissao,
         especialidade: p.especialidade || p.profissao,
         descricao: p.descricao || 'Profissional cadastrado no Vezzo.',
