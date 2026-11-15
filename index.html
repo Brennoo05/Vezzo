@@ -3948,9 +3948,9 @@ function cartaoHorario(h, visao = 'paciente'){
     } else if (naFila) {
       acao = `<span class="text-xs font-medium text-[var(--gold)]">Na fila (pos. ${posicaoFila})</span>`;
     } else if (alvoView.status === 'livre') {
-      acao = `<button onclick="agendarComFeedback(${pacienteAtual}, ${h.id}, this)" class="btn-primary px-3 py-1.5 text-xs font-medium">Agendar</button>`;
+      acao = `<button onclick="agendarComFeedback('${pacienteAtual}', ${h.id}, this)" class="btn-primary px-3 py-1.5 text-xs font-medium">Agendar</button>`;
     } else {
-      acao = `<button onclick="agendarComFeedback(${pacienteAtual}, ${h.id}, this)" class="btn-ghost px-3 py-1.5 text-xs font-medium">Entrar na fila (${alvoView.fila.length})</button>`;
+      acao = `<button onclick="agendarComFeedback('${pacienteAtual}', ${h.id}, this)" class="btn-ghost px-3 py-1.5 text-xs font-medium">Entrar na fila (${alvoView.fila.length})</button>`;
     }
 
     return `
