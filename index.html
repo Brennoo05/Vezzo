@@ -2306,9 +2306,9 @@ const perfisPorId = new Map(perfis.map(p => [p.id, p]));
       }
 
       return {
-        id: index + 1,
-        supabaseId: p.id,
-        profileId: p.profile_id,
+  id: p.id,
+  supabaseId: p.id,
+  profileId: p.profile_id,
         nome: perfil.nome,
         email: '',
         profissao: p.profissao,
