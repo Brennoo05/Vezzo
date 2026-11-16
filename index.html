@@ -1543,20 +1543,73 @@ async function agendarComFeedback(pacienteId, horarioId, botao) {
   }
 
   // Mantém o comportamento atual da fila de espera.
-  const antes = getHorario(horarioId)?.status;
 
-  agendar(pacienteId, horarioId);
+  // Registra a entrada na fila no Supabase.
+  if (pacienteTemConflito(pacienteId, h.data, h.hora)) {
+    mensagemErro('Você já tem uma consulta nesse mesmo dia e horário.');
+    return;
+  }
 
-  const depois = getHorario(horarioId)?.status;
+  if (horarioJaEncerrado(h.data, h.hora)) {
+    mensagemErro('Este horário já foi encerrado.');
+    return;
+  }
 
-  if (depois && depois !== antes) {
-    mostrarToast(
-      depois === 'lotado'
-        ? 'Você entrou na fila de espera.'
-        : 'Consulta agendada.'
+  if (!alvo.supabaseId) {
+    mensagemErro('Não foi possível identificar o horário no Supabase.');
+    return;
+  }
+
+  const agendaOrigem = state.agendas.find(
+    a => a.id === h.agendaId
+  )?.supabaseId || null;
+
+  if (botao) {
+    botao.disabled = true;
+    botao.textContent = 'Entrando na fila…';
+  }
+
+  try {
+    const { data: consultaSupabaseId, error } = await supabaseClient
+      .rpc('entrar_fila_vezzo', {
+        p_horario_id: alvo.supabaseId,
+        p_agenda_origem_id: agendaOrigem
+      });
+
+    if (error) throw error;
+
+    // Atualiza também a fila no estado local.
+    agendar(pacienteId, horarioId);
+
+    const consultaLocal = state.consultas
+      .filter(c =>
+        c.pacienteId === pacienteId &&
+        c.horarioId === alvo.id &&
+        c.status === 'fila'
+      )
+      .pop();
+
+    if (consultaLocal) {
+      consultaLocal.supabaseId = consultaSupabaseId;
+    }
+
+    salvarDados();
+    mostrarToast('Você entrou na fila de espera.');
+    render();
+
+  } catch (erro) {
+    console.error('Erro ao entrar na fila:', erro);
+    mensagemErro(
+      erro.message || 'Não foi possível entrar na fila de espera.'
     );
+
+    if (botao) {
+      botao.disabled = false;
+      botao.textContent = 'Agendar';
+    }
   }
 }
+
 
 function liberarHorarioEPromover(horarioId, consultaCanceladaId){
   const h = getHorario(horarioId);
@@ -1834,8 +1887,37 @@ function confirmarCancelamentoPaciente(){
     consulta.status = 'cancelada';
     if (h.fila.length === 0 && h.pacienteId) h.status = 'ocupado';
   } else if (consulta.status === 'confirmada') {
-    liberarHorarioEPromover(h.id, consulta.id);
-  }
+  // Cancela primeiro no Supabase.
+  (async () => {
+    try {
+      if (!consulta.supabaseId) {
+        throw new Error('ID da consulta no Supabase não encontrado.');
+      }
+
+      const { error } = await supabaseClient.rpc(
+        'cancelar_consulta_vezzo',
+        { p_consulta_id: consulta.supabaseId }
+      );
+
+      if (error) throw error;
+
+      liberarHorarioEPromover(h.id, consulta.id);
+
+      // Atualiza o status local da consulta.
+      consulta.status = 'cancelada';
+
+      mostrarToast('Consulta cancelada e profissional notificado.');
+      render();
+
+    } catch (erro) {
+      console.error('Erro ao cancelar consulta:', erro);
+      mensagemErro('Não foi possível cancelar a consulta. Tente novamente.');
+      render();
+    }
+  })();
+
+  return;
+}
 
   // O cancelamento do paciente também precisa chegar ao profissional.
   notificar(consulta.pacienteId, 'cancelamento', `Sua consulta com ${prof.nome} foi cancelada.`);
