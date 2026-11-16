@@ -2141,23 +2141,35 @@ async function carregarConsultasPacienteSupabase() {
         throw new Error('Profissional relacionado à consulta não encontrado.');
       }
 
-      if (!horarioLocal) {
-        horarioLocal = {
-          id: state.proximoIdHorario++,
-          supabaseId: h.id,
-          profissionalId: profissionalLocal.id,
-          agendaId: agendasLocais.get(h.agenda_id)?.id,
-          data: h.data,
-          hora: h.hora.slice(0, 5),
-          modalidade: h.modalidade,
-          status: h.status,
-          pacienteId: null,
-          fila: [],
-          filaOrigem: []
-        };
+      
+if (!horarioLocal) {
+  horarioLocal = {
+    id: state.proximoIdHorario++,
+    supabaseId: h.id,
+    profissionalId: profissionalLocal.id,
+    agendaId: agendasLocais.get(h.agenda_id)?.id,
+    data: h.data,
+    hora: h.hora.slice(0, 5),
+    modalidade: h.modalidade,
+    status: h.status,
+    pacienteId: null,
+    fila: [],
+    filaOrigem: []
+  };
 
-        state.horarios.push(horarioLocal);
-      }
+  state.horarios.push(horarioLocal);
+} else {
+  // Atualiza os dados do horário já existente
+  // para manter os vínculos com os IDs locais atuais.
+  horarioLocal.profissionalId = profissionalLocal.id;
+  horarioLocal.agendaId = agendasLocais.get(h.agenda_id)?.id;
+  horarioLocal.data = h.data;
+  horarioLocal.hora = h.hora.slice(0, 5);
+  horarioLocal.modalidade = h.modalidade;
+  horarioLocal.status = h.status;
+  horarioLocal.supabaseId = h.id;
+}
+
 
       horariosLocais.set(h.id, horarioLocal);
     });
