@@ -1878,16 +1878,8 @@ function confirmarCancelamentoPaciente(){
     if (!regra.ok) { mensagemErro(regra.motivo); render(); return; }
   }
 
-  if (consulta.status === 'fila') {
-    const idx = h.fila.indexOf(consulta.pacienteId);
-    if (idx !== -1) {
-      h.fila.splice(idx, 1);
-      if (Array.isArray(h.filaOrigem)) h.filaOrigem.splice(idx, 1);
-    }
-    consulta.status = 'cancelada';
-    if (h.fila.length === 0 && h.pacienteId) h.status = 'ocupado';
-  } else if (consulta.status === 'confirmada') {
-  // Cancela primeiro no Supabase.
+  
+if (consulta.status === 'fila') {
   (async () => {
     try {
       if (!consulta.supabaseId) {
@@ -1895,19 +1887,75 @@ function confirmarCancelamentoPaciente(){
       }
 
       const { error } = await supabaseClient.rpc(
-        'cancelar_consulta_vezzo',
+        'sair_fila_vezzo',
         { p_consulta_id: consulta.supabaseId }
       );
 
       if (error) throw error;
 
-      liberarHorarioEPromover(h.id, consulta.id);
+      // Atualiza a saída da fila no estado local.
+      const idx = h.fila.indexOf(consulta.pacienteId);
 
-      // Atualiza o status local da consulta.
+      if (idx !== -1) {
+        h.fila.splice(idx, 1);
+
+        if (Array.isArray(h.filaOrigem)) {
+          h.filaOrigem.splice(idx, 1);
+        }
+      }
+
       consulta.status = 'cancelada';
 
-      mostrarToast('Consulta cancelada e profissional notificado.');
+      salvarDados();
+      mostrarToast('Você saiu da fila de espera.');
       render();
+
+    } catch (erro) {
+      console.error('Erro ao sair da fila:', erro);
+      mensagemErro('Não foi possível sair da fila. Tente novamente.');
+      render();
+    }
+  })();
+
+  return;
+
+} else if (consulta.status === 'confirmada') {
+
+  // Cancela primeiro no Supabase.
+  (async () => {
+    try {
+      if (!consulta.supabaseId) {
+        throw new Error('ID da consulta no Supabase não encontrado.');
+      }
+
+     
+const { data: consultaPromovidaId, error } = await supabaseClient.rpc(
+  'cancelar_consulta_vezzo',
+  { p_consulta_id: consulta.supabaseId }
+);
+
+if (error) throw error;
+
+// Atualiza a consulta cancelada localmente.
+consulta.status = 'cancelada';
+
+// O Supabase já realizou a promoção.
+// Aqui apenas sincronizamos o estado visual do horário.
+h.fila = [];
+h.filaOrigem = [];
+
+if (consultaPromovidaId) {
+  h.status = 'ocupado';
+  h.pacienteId = null;
+} else {
+  h.status = 'livre';
+  h.pacienteId = null;
+}
+
+salvarDados();
+
+mostrarToast('Consulta cancelada e agenda atualizada.');
+render();
 
     } catch (erro) {
       console.error('Erro ao cancelar consulta:', erro);
@@ -2296,6 +2344,80 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
 
     if (erroAgendas) throw erroAgendas;
 
+
+    // Busca as consultas vinculadas aos horários do profissional.
+    const idsHorarios = horarios.map(h => h.id);
+
+    let consultas = [];
+    let filaEspera = [];
+    let pacientesPorId = new Map();
+
+    if (idsHorarios.length) {
+      const { data: consultasBanco, error: erroConsultas } =
+        await supabaseClient
+          .from('consultas')
+          .select('id, paciente_id, horario_id, status, alerta_faltas')
+          .in('horario_id', idsHorarios);
+
+      if (erroConsultas) throw erroConsultas;
+
+      consultas = consultasBanco || [];
+
+      const { data: filaBanco, error: erroFila } =
+        await supabaseClient
+          .from('fila_espera')
+          .select('id, consulta_id, horario_id, paciente_id, agenda_origem_id, posicao, status')
+          .in('horario_id', idsHorarios)
+          .eq('status', 'aguardando')
+          .order('posicao');
+
+      if (erroFila) throw erroFila;
+
+      filaEspera = filaBanco || [];
+
+      // Busca os cadastros dos pacientes relacionados.
+      const idsPacientes = [
+        ...new Set(consultas.map(c => c.paciente_id))
+      ];
+
+      if (idsPacientes.length) {
+        const { data: pacientesBanco, error: erroPacientes } =
+          await supabaseClient
+            .from('pacientes')
+            .select('id, profile_id')
+            .in('id', idsPacientes);
+
+        if (erroPacientes) throw erroPacientes;
+
+        const idsPerfis = pacientesBanco.map(p => p.profile_id);
+
+        const { data: perfisBanco, error: erroPerfis } =
+          await supabaseClient
+            .from('profiles')
+            .select('id, nome, email')
+            .in('id', idsPerfis);
+
+        if (erroPerfis) throw erroPerfis;
+
+        const perfisPorId = new Map(
+          perfisBanco.map(p => [p.id, p])
+        );
+
+        pacientesBanco.forEach(p => {
+          const perfil = perfisPorId.get(p.profile_id);
+
+          if (perfil) {
+            pacientesPorId.set(p.id, {
+              id: p.id,
+              nome: perfil.nome,
+              email: perfil.email
+            });
+          }
+        });
+      }
+    }
+
+
     const { data: horarios, error: erroHorarios } = await supabaseClient
       .from('horarios')
       .select('*')
@@ -2312,23 +2434,114 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
       criadaEm: a.criada_em
     }));
 
+  
     const idsAgendas = new Map(
       agendasLocais.map(a => [a.supabaseId, a.id])
     );
 
-    const horariosLocais = horarios.map(h => ({
-      id: state.proximoIdHorario++,
-      supabaseId: h.id,
-      profissionalId,
-      agendaId: idsAgendas.get(h.agenda_id),
-      data: h.data,
-      hora: h.hora.slice(0, 5),
-      modalidade: h.modalidade,
-      status: h.status,
-      pacienteId: null,
-      fila: [],
-      filaOrigem: []
-    }));
+    // Cria ou atualiza os pacientes no estado local.
+    const pacientesLocaisPorSupabaseId = new Map();
+
+    pacientesPorId.forEach((dados, pacienteSupabaseId) => {
+      let pacienteLocal = state.pacientes.find(
+        p => p.supabaseId === pacienteSupabaseId
+      );
+
+      if (!pacienteLocal) {
+        pacienteLocal = {
+          id: state.proximoIdPaciente++,
+          supabaseId: pacienteSupabaseId,
+          nome: dados.nome,
+          email: dados.email
+        };
+
+        state.pacientes.push(pacienteLocal);
+      } else {
+        pacienteLocal.nome = dados.nome;
+        pacienteLocal.email = dados.email;
+      }
+
+      pacientesLocaisPorSupabaseId.set(
+        pacienteSupabaseId,
+        pacienteLocal
+      );
+    });
+
+    // Monta os horários com o paciente confirmado e a fila.
+    const horariosLocais = horarios.map(h => {
+      const consultaConfirmada = consultas.find(
+        c => c.horario_id === h.id && c.status === 'confirmada'
+      );
+
+      const pacienteConfirmado = consultaConfirmada
+        ? pacientesLocaisPorSupabaseId.get(consultaConfirmada.paciente_id)
+        : null;
+
+      const filaDoHorario = filaEspera
+        .filter(f => f.horario_id === h.id)
+        .sort((a, b) => a.posicao - b.posicao);
+
+      return {
+        id: state.proximoIdHorario++,
+        supabaseId: h.id,
+        profissionalId,
+        agendaId: idsAgendas.get(h.agenda_id),
+        data: h.data,
+        hora: h.hora.slice(0, 5),
+        modalidade: h.modalidade,
+        status: h.status,
+        pacienteId: pacienteConfirmado?.id ?? null,
+        fila: filaDoHorario
+          .map(f => pacientesLocaisPorSupabaseId.get(f.paciente_id)?.id)
+          .filter(id => id != null),
+        filaOrigem: filaDoHorario.map(
+          f => idsAgendas.get(f.agenda_origem_id) ?? idsAgendas.get(h.agenda_id)
+        )
+      };
+    });
+
+
+        // Guarda os IDs antigos dos horários deste profissional.
+    const idsHorariosAntigos = new Set(
+      state.horarios
+        .filter(h => h.profissionalId === profissionalId)
+        .map(h => h.id)
+    );
+
+    // Converte as consultas do Supabase para o estado local.
+    const consultasLocais = consultas.map(c => {
+      const horarioLocal = horariosLocais.find(
+        h => h.supabaseId === c.horario_id
+      );
+
+      const pacienteLocal = pacientesLocaisPorSupabaseId.get(
+        c.paciente_id
+      );
+
+      if (!horarioLocal || !pacienteLocal) return null;
+
+      const consultaExistente = state.consultas.find(
+        x => x.supabaseId === c.id
+      );
+
+      return {
+        id: consultaExistente?.id ?? state.proximoIdConsulta++,
+        supabaseId: c.id,
+        pacienteId: pacienteLocal.id,
+        horarioId: horarioLocal.id,
+        status: c.status,
+        alertaFaltas: !!c.alerta_faltas
+      };
+    }).filter(Boolean);
+
+    // Substitui as consultas antigas pelas informações do Supabase.
+    state.consultas = [
+      ...state.consultas.filter(
+        c => !idsHorariosAntigos.has(c.horarioId)
+      ),
+      ...consultasLocais
+    ];
+
 
     state.agendas = [
       ...state.agendas.filter(a => a.profissionalId !== profissionalId),
