@@ -2344,6 +2344,14 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
 
     if (erroAgendas) throw erroAgendas;
 
+        // Busca os horários do profissional.
+    const { data: horarios, error: erroHorarios } = await supabaseClient
+      .from('horarios')
+      .select('*')
+      .eq('profissional_id', profissionalId);
+
+    if (erroHorarios) throw erroHorarios;
+
 
     // Busca as consultas vinculadas aos horários do profissional.
     const idsHorarios = horarios.map(h => h.id);
@@ -2416,14 +2424,6 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
         });
       }
     }
-
-
-    const { data: horarios, error: erroHorarios } = await supabaseClient
-      .from('horarios')
-      .select('*')
-      .eq('profissional_id', profissionalId);
-
-    if (erroHorarios) throw erroHorarios;
 
     const agendasLocais = agendas.map(a => ({
       id: state.proximoIdAgenda++,
