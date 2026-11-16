@@ -3336,7 +3336,7 @@ function cartaoProfissional(p){
   const modalidadeTexto = modalidade === 'ambos' ? '💻 Online · 📍 Presencial'
     : (modalidade === 'online' ? '💻 Online' : '📍 Presencial');
   return `
-    <div class="card p-5 hover:border-[var(--primary)] cursor-pointer transition flex gap-4" onclick="selecionarProfissional(${p.id})">
+    <div class="card p-5 hover:border-[var(--primary)] cursor-pointer transition flex gap-4" onclick="selecionarProfissional('${p.id}')">
       <div class="avatar-circle">${p.avatar || '🧑⚕️'}</div>
       <div class="flex-1">
         <h3 class="font-display text-xl text-[var(--primary-dark)]">${p.nome}</h3>
