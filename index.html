@@ -2259,7 +2259,7 @@ async function fazerLogin() {
       state.agendaAberta = false;
       abaPaciente = 'profissionais';
       await carregarProfissionaisSupabase();
-      await carregarConsultasPacienteSupabase();
+      // await carregarConsultasPacienteSupabase();
 
     } else if (perfil.tipo === 'profissional') {
       const { data: profissional, error: erroProfissional } = await supabaseClient
@@ -2341,7 +2341,7 @@ async function restaurarSessaoSupabase() {
 
       abaPaciente = 'profissionais';
       await carregarProfissionaisSupabase();
-      await carregarConsultasPacienteSupabase();
+     // await carregarConsultasPacienteSupabase();
       state.clinicaSelecionadaId = null;
       state.profissionalSelecionadoId = null;
       state.agendaAberta = false;
