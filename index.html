@@ -3425,7 +3425,24 @@ function telaPacienteListaProfissionais(){
 
 function telaPacientePerfil(){
   const p = getProfissional(state.profissionalSelecionadoId);
+
+  console.log("ID selecionado:", state.profissionalSelecionadoId);
+  console.log("Profissional encontrado:", p);
+
+  if (!p) {
+    return `
+      ${barraNavegacao()}
+      <div class="max-w-xl mx-auto p-8">
+        <div class="card p-6">
+          <h2>Profissional não encontrado</h2>
+          <p>ID selecionado: ${state.profissionalSelecionadoId}</p>
+        </div>
+      </div>
+    `;
+  }
+
   const clinica = getClinica(p.clinicaId);
+
   const modalidade = p.modalidadeAtendimento || 'presencial';
   return `
     ${barraNavegacao()}
