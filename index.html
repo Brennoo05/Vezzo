@@ -1456,13 +1456,28 @@ function consultaPodeSerCancelada(c){
 function contarFaltasPaciente(pacienteId){ return state.consultas.filter(c=>c.pacienteId===pacienteId && c.status==='faltou').length; }
 function clienteComMuitasFaltas(pacienteId){ return contarFaltasPaciente(pacienteId)>=3; }
 
-function salvarAnotacaoPrivada(consultaId){
+async function salvarAnotacaoPrivada(consultaId){
   const c=state.consultas.find(x=>x.id===consultaId); if(!c||state.usuario.tipo!=='profissional') return;
   const el=document.getElementById('nota-'+consultaId); const texto=(el?.value||'').trim();
   if(!texto) return mensagemErro('Escreva uma observação antes de salvar.');
-  const arr=Array.isArray(state.anotacoesPrivadas[consultaId])?state.anotacoesPrivadas[consultaId]:[];
-  arr.push({id:Date.now(),profissionalId:state.usuario.id,texto,criadoEm:new Date().toISOString()}); state.anotacoesPrivadas[consultaId]=arr;
-  mostrarToast('Anotação privada salva.'); render();
+  if(!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+  try {
+    const { data, error } = await supabaseClient
+      .from('anotacoes_privadas')
+      .insert({ consulta_id: c.supabaseId, profissional_id: state.usuario.id, texto })
+      .select('id, criada_em')
+      .single();
+    if (error) throw error;
+    const arr = Array.isArray(state.anotacoesPrivadas[consultaId]) ? state.anotacoesPrivadas[consultaId] : [];
+    arr.push({ id: data.id, profissionalId: state.usuario.id, texto, criadoEm: data.criada_em });
+    state.anotacoesPrivadas[consultaId] = arr;
+    salvarDados();
+    mostrarToast('Anotação privada salva.');
+  } catch (erro) {
+    console.error('Erro ao salvar anotação:', erro);
+    mensagemErro('Não foi possível salvar a anotação.');
+  }
+  render();
 }
 async function abrirReagendamento(consultaId){ if(state.usuario?.tipo !== 'paciente'){ mensagemErro('O reagendamento é feito pelo paciente.'); return; } const c=state.consultas.find(x=>x.id===consultaId); if(!c)return; const hAtual=getHorario(c.horarioId); if(!hAtual)return;
   // Busca no Supabase os horários atualizados desse profissional antes de montar a lista
@@ -1515,7 +1530,7 @@ async function confirmarReagendamento(consultaId){
     render();
   }
 }
-function salvarAvaliacao(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); if(!c||c.status!=='realizada')return; const nota=Number(document.getElementById('nota-av-'+consultaId)?.value||0); const comentario=(document.getElementById('coment-av-'+consultaId)?.value||'').trim(); if(nota<1||nota>5)return mensagemErro('Escolha uma nota de 1 a 5.'); state.avaliacoes[consultaId]={nota,comentario,criadoEm:new Date().toISOString()}; const h=getHorario(c.horarioId); notificar(null,'avaliacao_recebida',`Você recebeu uma avaliação de ${getPaciente(c.pacienteId)?.nome||'cliente'}.`,h?.profissionalId); mostrarToast('Avaliação enviada. Obrigado!'); render(); }
+// Avaliações agora são salvas no Supabase (ver avaliarConsulta)
 function agendar(pacienteId, horarioId, opcoes = {}){
   const h = getHorario(horarioId);
   if (!h || h.status === 'concluido') {
@@ -2485,6 +2500,8 @@ if (!horarioLocal) {
       console.error('Erro ao carregar confirmações:', erroConf);
     }
 
+    await carregarMinhasAvaliacoes();
+
     salvarDados();
 
   } catch (erro) {
@@ -2856,6 +2873,28 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
     } catch (erroConf) {
       console.error('Erro ao carregar confirmações do profissional:', erroConf);
     }
+
+    // Anotações privadas do profissional (Supabase)
+    try {
+      const { data: notas, error: erroNotas } = await supabaseClient
+        .from('anotacoes_privadas')
+        .select('id, consulta_id, texto, criada_em')
+        .eq('profissional_id', profissionalId)
+        .order('criada_em');
+      if (erroNotas) throw erroNotas;
+      const idLocalNota = new Map(consultasLocais.map(c => [c.supabaseId, c.id]));
+      consultasLocais.forEach(c => { delete state.anotacoesPrivadas[c.id]; });
+      (notas || []).forEach(n => {
+        const idLocal = idLocalNota.get(n.consulta_id);
+        if (!idLocal) return;
+        (state.anotacoesPrivadas[idLocal] = state.anotacoesPrivadas[idLocal] || [])
+          .push({ id: n.id, profissionalId, texto: n.texto, criadoEm: n.criada_em });
+      });
+    } catch (erroNotas) {
+      console.error('Erro ao carregar anotações:', erroNotas);
+    }
+
+    await carregarAvaliacoesProfissional(profissionalId);
 
 
     state.agendas = [
@@ -3548,6 +3587,7 @@ function selecionarProfissional(id){
   state.agendaAberta = false;
   agendaSelecionadaPacienteId = null;
   render();
+  carregarAvaliacoesProfissional(id).then(() => render());
 }
 
 function voltarParaListaProfissionais(){
@@ -3876,6 +3916,7 @@ function linhaConsultaPaciente(c, permitirCancelar){
     cancelada: ['Cancelada', 'badge-concluido'],
     realizada: ['Realizada', 'badge-livre'],
     fila_encerrada: ['Fila encerrada', 'badge-concluido'],
+    faltou: ['Faltou', 'badge-lotado'],
   };
   const prof = getProfissional(c.h.profissionalId);
   const [label, classe] = statusLabel[c.status] || [c.status, ''];
@@ -3889,6 +3930,7 @@ function linhaConsultaPaciente(c, permitirCancelar){
         <div class="text-sm text-[var(--ink-soft)] tabular mt-1">${formatarDataCurta(c.h.data)} · ${c.h.hora} · ${c.h.modalidade === 'online' ? '💻 Online' : '📍 Presencial'}</div>
         ${pend ? `<div class="text-xs text-[var(--brick)] mt-1">⚠️ Confirme até ${formatarPrazoConfirmacao(c.h)} ou sua vaga poderá passar para a fila de espera.</div>` : ''}
         ${encStatusHtml(c)}
+        ${avaliacaoHtml(c)}
         ${ehFila ? `<div class="text-xs text-[var(--ink-soft)] mt-1">${textoFila(c.h)} Pode sair da fila quando quiser, sem custo.</div>` : ''}
       </div>
       <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -4102,7 +4144,7 @@ function telaPacienteConsultas(){
     .sort((a,b) => (a.h.data + a.h.hora).localeCompare(b.h.data + b.h.hora));
 
   const proximas = minhas.filter(c => ['confirmada', 'fila'].includes(c.status));
-  const historico = minhas.filter(c => ['realizada', 'cancelada', 'fila_encerrada'].includes(c.status)).reverse();
+  const historico = minhas.filter(c => ['realizada', 'faltou', 'cancelada', 'fila_encerrada'].includes(c.status)).reverse();
 
   return `
     ${barraNavegacao()}
@@ -4229,11 +4271,75 @@ function seletorAgendas(){
 }
 
 function avaliacoesDoProfissional(profId){
-  return Object.entries(state.avaliacoes || {}).map(([consultaId, a]) => {
-    const c = state.consultas.find(x => String(x.id) === String(consultaId));
-    const h = c ? getHorario(c.horarioId) : null;
-    return { ...a, consulta:c, horario:h, paciente:c ? getPaciente(c.pacienteId) : null };
-  }).filter(x => x.horario && Number(x.horario.profissionalId) === Number(profId) && Number(x.nota) >= 1);
+  const lista = (state.avaliacoesPorProfissional || {})[profId] || [];
+  return lista.map(a => {
+    const c = state.consultas.find(x => x.supabaseId === a.consulta_id);
+    return { nota: a.nota, comentario: '', criadoEm: a.criada_em, consulta: c || null, paciente: c ? getPaciente(c.pacienteId) : null };
+  }).filter(a => Number(a.nota) >= 1);
+}
+
+// Busca as avaliações de um profissional (média e lista) no Supabase
+async function carregarAvaliacoesProfissional(profId){
+  if (!profId) return;
+  try {
+    const { data, error } = await supabaseClient.rpc('listar_avaliacoes_profissional_vezzo', { p_profissional_id: profId });
+    if (error) throw error;
+    if (!state.avaliacoesPorProfissional) state.avaliacoesPorProfissional = {};
+    // a lista vem da mais recente para a mais antiga; a tela espera a ordem inversa
+    state.avaliacoesPorProfissional[profId] = (data || []).slice().reverse();
+    (data || []).forEach(a => {
+      const c = state.consultas.find(x => x.supabaseId === a.consulta_id);
+      if (c) state.avaliacoes[c.id] = { nota: a.nota, criadoEm: a.criada_em };
+    });
+    salvarDados();
+  } catch (erro) {
+    console.error('Erro ao carregar avaliações:', erro);
+  }
+}
+
+// Avaliações feitas pelo próprio paciente (para mostrar "Sua avaliação" no histórico)
+async function carregarMinhasAvaliacoes(){
+  if (state.usuario?.tipo !== 'paciente') return;
+  try {
+    const { data, error } = await supabaseClient.from('avaliacoes').select('consulta_id, nota, criada_em');
+    if (error) throw error;
+    (data || []).forEach(a => {
+      const c = state.consultas.find(x => x.supabaseId === a.consulta_id);
+      if (c) state.avaliacoes[c.id] = { nota: a.nota, criadoEm: a.criada_em };
+    });
+  } catch (erro) {
+    console.error('Erro ao carregar suas avaliações:', erro);
+  }
+}
+
+async function avaliarConsulta(consultaId, nota){
+  const c = state.consultas.find(x => x.id === consultaId);
+  if (!c || c.status !== 'realizada') return;
+  if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+  if (!confirm(`Avaliar este atendimento com ${nota} ${nota === 1 ? 'estrela' : 'estrelas'}?`)) return;
+  try {
+    const { error } = await supabaseClient.rpc('avaliar_consulta_vezzo', { p_consulta_id: c.supabaseId, p_nota: nota });
+    if (error) throw error;
+    state.avaliacoes[c.id] = { nota, criadoEm: new Date().toISOString() };
+    salvarDados();
+    mostrarToast('Avaliação enviada. Obrigado!');
+  } catch (erro) {
+    console.error('Erro ao avaliar consulta:', erro);
+    mensagemErro(erro?.message || 'Não foi possível enviar a avaliação.');
+  }
+  render();
+}
+
+function avaliacaoHtml(c){
+  if (c.status !== 'realizada' || state.usuario?.tipo !== 'paciente') return '';
+  const av = state.avaliacoes[c.id];
+  if (av) {
+    return `<div class="text-xs mt-1 text-[var(--ink-soft)]">Sua avaliação: <span style="color:#B45309;font-size:.95rem">${'★'.repeat(Number(av.nota))}${'☆'.repeat(5 - Number(av.nota))}</span></div>`;
+  }
+  const estrelas = [1,2,3,4,5].map(n =>
+    `<button type="button" onclick="avaliarConsulta(${c.id}, ${n})" title="${n} ${n === 1 ? 'estrela' : 'estrelas'}" aria-label="Avaliar com ${n} ${n === 1 ? 'estrela' : 'estrelas'}" style="color:#B45309;background:none;border:none;cursor:pointer;font-size:1.35rem;line-height:1;padding:0 2px;min-height:auto">☆</button>`
+  ).join('');
+  return `<div class="flex items-center gap-1 mt-2 flex-wrap"><span class="text-xs text-[var(--ink-soft)] mr-1">Avalie o atendimento:</span>${estrelas}</div>`;
 }
 function resumoAvaliacoes(profId){
   const arr = avaliacoesDoProfissional(profId);
