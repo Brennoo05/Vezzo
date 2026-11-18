@@ -1201,7 +1201,10 @@ function carregarDados() {
     });
     state.notificacoes.forEach(n => { if (n.lida === undefined) n.lida = false; if (n.profissionalId === undefined) n.profissionalId = null; });
   } else {
-    semearDados();
+    // Primeiro acesso: tudo vem do Supabase (sem dados de demonstração)
+    state.profissionais = [];
+    state.pacientes = [];
+    state.clinicas = [];
   }
 }
 
@@ -1461,7 +1464,10 @@ function salvarAnotacaoPrivada(consultaId){
   arr.push({id:Date.now(),profissionalId:state.usuario.id,texto,criadoEm:new Date().toISOString()}); state.anotacoesPrivadas[consultaId]=arr;
   mostrarToast('Anotação privada salva.'); render();
 }
-function abrirReagendamento(consultaId){ if(state.usuario?.tipo !== 'paciente'){ mensagemErro('O reagendamento é feito pelo paciente.'); return; } const c=state.consultas.find(x=>x.id===consultaId); if(!c)return; const h=getHorario(c.horarioId); if(!h)return; const prof=getProfissional(h.profissionalId); const disponiveis=state.horarios.filter(x=>x.profissionalId===h.profissionalId&&x.agendaId===h.agendaId&&x.status==='livre'&&horarioDisponivelParaPaciente(x)&&!dentroJanelaExclusividade(x)&&!horarioJaEncerrado(x.data,x.hora)).sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).slice(0,12); const op=disponiveis.map(x=>`<option value="${x.id}">${formatarDataCurta(x.data)} · ${x.hora} · ${x.modalidade==='online'?'Online':'Presencial'}</option>`).join('');
+async function abrirReagendamento(consultaId){ if(state.usuario?.tipo !== 'paciente'){ mensagemErro('O reagendamento é feito pelo paciente.'); return; } const c=state.consultas.find(x=>x.id===consultaId); if(!c)return; const hAtual=getHorario(c.horarioId); if(!hAtual)return;
+  // Busca no Supabase os horários atualizados desse profissional antes de montar a lista
+  try { await carregarAgendaPacienteSupabase(hAtual.profissionalId); } catch (e) { return; }
+  const h=getHorario(c.horarioId); if(!h)return; const prof=getProfissional(h.profissionalId); const disponiveis=state.horarios.filter(x=>x.profissionalId===h.profissionalId&&x.agendaId===h.agendaId&&x.status==='livre'&&horarioDisponivelParaPaciente(x)&&!dentroJanelaExclusividade(x)&&!horarioJaEncerrado(x.data,x.hora)).sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).slice(0,12); const op=disponiveis.map(x=>`<option value="${x.id}">${formatarDataCurta(x.data)} · ${x.hora} · ${x.modalidade==='online'?'Online':'Presencial'}</option>`).join('');
   const modal=document.createElement('div'); modal.id='modal-reagendamento'; modal.className='fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4'; modal.innerHTML=`<div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl"><h3 class="font-display text-xl">Reagendar consulta</h3><p class="text-sm text-[var(--ink-soft)] mt-2">${escaparHtml(prof?.nome||'Profissional')} · escolha um novo horário.</p>${op?`<select id="novo-horario-reag" class="w-full border border-[var(--line)] rounded-lg p-2 mt-4">${op}</select><div class="flex gap-2 mt-5"><button class="btn-ghost flex-1 py-2" onclick="document.getElementById('modal-reagendamento')?.remove()">Cancelar</button><button class="btn-primary flex-1 py-2" onclick="confirmarReagendamento(${consultaId})">Reagendar</button></div>`:`<div class="card p-4 mt-4 text-sm">Não há horários livres disponíveis no momento.</div><button class="btn-ghost w-full py-2 mt-4" onclick="document.getElementById('modal-reagendamento')?.remove()">Fechar</button>`}</div>`; document.body.appendChild(modal); }
 async function confirmarReagendamento(consultaId){
   const c = state.consultas.find(x => x.id === consultaId);
@@ -2423,6 +2429,24 @@ if (!horarioLocal) {
       };
     });
 
+    // Marca nos horários a consulta/fila do próprio paciente
+    // (assim a agenda mostra "Sua consulta ✓" / "Na fila" mesmo depois do F5).
+    const ordemStatus = c => (['confirmada', 'fila'].includes(c.status) ? 1 : 0);
+    consultasLocais.slice().sort((x, y) => ordemStatus(x) - ordemStatus(y)).forEach(c => {
+      const h = state.horarios.find(x => x.id === c.horarioId);
+      if (!h) return;
+      h.fila = Array.isArray(h.fila) ? h.fila : [];
+      h.filaOrigem = Array.isArray(h.filaOrigem) ? h.filaOrigem : [];
+      if (c.status === 'confirmada') h.pacienteId = pacienteId;
+      else if (h.pacienteId === pacienteId) h.pacienteId = null;
+      const pos = h.fila.indexOf(pacienteId);
+      if (c.status === 'fila') {
+        if (pos === -1) { h.fila.push(pacienteId); h.filaOrigem.push(h.agendaId); }
+      } else if (pos !== -1) {
+        h.fila.splice(pos, 1); h.filaOrigem.splice(pos, 1);
+      }
+    });
+
     // Substitui somente as consultas deste paciente.
       // Remove cópias antigas (mesmo supabaseId) e consultas sem dono válido.
     const idsSupabaseCarregados = new Set(consultasLocais.map(c => c.supabaseId));
@@ -2535,6 +2559,24 @@ const perfisPorId = new Map(perfis.map(p => [p.id, p]));
         localAtendimento: p.local_atendimento || ''
       };
     }).filter(Boolean);
+
+    // Agendas de todos os profissionais: os nomes delas são os convênios do filtro da busca
+    const { data: agendasBanco, error: erroAgendasBusca } = await supabaseClient
+      .from('agendas')
+      .select('id, profissional_id, nome, prioridade, criada_em');
+    if (erroAgendasBusca) {
+      console.error('Erro ao carregar convênios:', erroAgendasBusca);
+    } else {
+      (agendasBanco || []).forEach(a => {
+        if (state.agendas.some(x => x.supabaseId === a.id)) return;
+        const prof = state.profissionais.find(p => p.supabaseId === a.profissional_id);
+        if (!prof) return;
+        state.agendas.push({
+          id: state.proximoIdAgenda++, supabaseId: a.id, profissionalId: prof.id,
+          nome: a.nome, prioridade: a.prioridade, criadaEm: a.criada_em
+        });
+      });
+    }
 
     state.proximoIdProfissional = state.profissionais.length + 1;
     state.proximoIdClinica = proximoIdClinica;
@@ -3060,31 +3102,6 @@ state.usuario = {
   profissao: profissional.profissao
 };
 
-      state.usuario = {
-        tipo: 'profissional',
-        id: profissional.id,
-        nome: perfil.nome,
-        profissao: profissional.profissao
-      };
-
-  
-
-if (!profissionalLocal) {
-  state.profissionais.push({
-    id: profissional.id,
-    nome: perfil.nome,
-    email: perfil.email,
-    profissao: profissional.profissao,
-    especialidade: profissional.profissao,
-    descricao: 'Profissional cadastrado no Vezzo.',
-    avatar: '🧑‍⚕️',
-    clinicaId: null,
-    clinicaNome: '',
-    modalidadeAtendimento: 'presencial',
-    localAtendimento: ''
-  });
-}
-
       abaProfissional = 'painel';
 await carregarAgendasHorariosSupabase(profissional.id);
 await carregarConfiguracoesProfissionalSupabase(profissional.id);
@@ -3384,8 +3401,8 @@ function telaLogin(){
     const emailExemplo = tipoContaSelecionado==='paciente' ? 'ana@email.com' : tipoContaSelecionado==='clinica' ? 'cardiovida@email.com' : 'camila@email.com';
     corpo = `
       <div class="space-y-3">
-        <input id="login-email" type="email" placeholder="E-mail" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm" value="${emailExemplo}">
-        <input id="login-senha" type="password" placeholder="Senha" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm" value="123">
+        <input id="login-email" type="email" placeholder="E-mail" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm">
+        <input id="login-senha" type="password" placeholder="Senha" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm">
         <button onclick="fazerLogin()" class="btn-primary w-full py-2.5 text-sm font-medium">Entrar</button>
         <div class="text-center mt-3">
           <button onclick="alternarTelaLogin('cadastro')" class="text-sm text-[var(--primary)] underline underline-offset-2">Não tem conta? Cadastre-se</button>
@@ -5207,8 +5224,7 @@ async function fazerCadastro() {
 }
 
 
-// Convênios de demonstração (estava definido, mas nunca era chamado)
-migrarDemoConvenios();
+
 /* ===== fim VEZZO-CLINICA-WIDGET ===== */
 
 
