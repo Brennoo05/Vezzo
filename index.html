@@ -1396,8 +1396,52 @@ function salvarAnotacaoPrivada(consultaId){
 }
 function abrirReagendamento(consultaId){ if(state.usuario?.tipo !== 'paciente'){ mensagemErro('O reagendamento é feito pelo paciente.'); return; } const c=state.consultas.find(x=>x.id===consultaId); if(!c)return; const h=getHorario(c.horarioId); if(!h)return; const prof=getProfissional(h.profissionalId); const disponiveis=state.horarios.filter(x=>x.profissionalId===h.profissionalId&&x.agendaId===h.agendaId&&x.status==='livre'&&horarioDisponivelParaPaciente(x)&&!dentroJanelaExclusividade(x)&&!horarioJaEncerrado(x.data,x.hora)).sort((a,b)=>(a.data+a.hora).localeCompare(b.data+b.hora)).slice(0,12); const op=disponiveis.map(x=>`<option value="${x.id}">${formatarDataCurta(x.data)} · ${x.hora} · ${x.modalidade==='online'?'Online':'Presencial'}</option>`).join('');
   const modal=document.createElement('div'); modal.id='modal-reagendamento'; modal.className='fixed inset-0 bg-black/40 z-[80] flex items-center justify-center p-4'; modal.innerHTML=`<div class="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl"><h3 class="font-display text-xl">Reagendar consulta</h3><p class="text-sm text-[var(--ink-soft)] mt-2">${escaparHtml(prof?.nome||'Profissional')} · escolha um novo horário.</p>${op?`<select id="novo-horario-reag" class="w-full border border-[var(--line)] rounded-lg p-2 mt-4">${op}</select><div class="flex gap-2 mt-5"><button class="btn-ghost flex-1 py-2" onclick="document.getElementById('modal-reagendamento')?.remove()">Cancelar</button><button class="btn-primary flex-1 py-2" onclick="confirmarReagendamento(${consultaId})">Reagendar</button></div>`:`<div class="card p-4 mt-4 text-sm">Não há horários livres disponíveis no momento.</div><button class="btn-ghost w-full py-2 mt-4" onclick="document.getElementById('modal-reagendamento')?.remove()">Fechar</button>`}</div>`; document.body.appendChild(modal); }
-function confirmarReagendamento(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); const novoId=Number(document.getElementById('novo-horario-reag')?.value); const novo=getHorario(novoId); if(!c||!novo||novo.status!=='livre'||!horarioDisponivelParaPaciente(novo))return mensagemErro('Esse horário não está mais disponível.'); const antigo=getHorario(c.horarioId); const prof=getProfissional(novo.profissionalId); if(antigo) liberarHorarioEPromover(antigo.id, null);
-  c.horarioId=novo.id; c.status='confirmada'; novo.pacienteId=c.pacienteId; novo.status='ocupado'; c.reagendadoDe=antigo?.id||null; c.reagendadoEm=new Date().toISOString(); state.reagendamentos[c.id]={de:antigo?.id||null,para:novo.id,data:c.reagendadoEm}; notificar(c.pacienteId,'reagendamento',`Sua consulta com ${prof?.nome||'profissional'} foi reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`); notificar(null,'reagendamento_profissional',`Consulta de ${getPaciente(c.pacienteId)?.nome||'cliente'} reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`,prof?.id); document.getElementById('modal-reagendamento')?.remove(); mostrarToast('Consulta reagendada com sucesso.'); render(); }
+async function confirmarReagendamento(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  const novoId = Number(document.getElementById('novo-horario-reag')?.value);
+  const novo = getHorario(novoId);
+  if (!c || !novo || novo.status !== 'livre' || !horarioDisponivelParaPaciente(novo))
+    return mensagemErro('Esse horário não está mais disponível.');
+  if (!c.supabaseId || !novo.supabaseId)
+    return mensagemErro('Não foi possível identificar a consulta ou o horário no Supabase.');
+
+  const antigo = getHorario(c.horarioId);
+  const prof = getProfissional(novo.profissionalId);
+
+  try {
+    const { data: consultaPromovidaId, error } = await supabaseClient.rpc('reagendar_consulta_vezzo', {
+      p_consulta_id: c.supabaseId,
+      p_novo_horario_id: novo.supabaseId
+    });
+    if (error) throw error;
+
+    // Horário antigo: ocupado se alguém da fila foi promovido, livre se não
+    if (antigo) {
+      antigo.fila = []; antigo.filaOrigem = [];
+      antigo.status = consultaPromovidaId ? 'ocupado' : 'livre';
+      antigo.pacienteId = null;
+    }
+
+    c.horarioId = novo.id;
+    c.reagendadoDe = antigo?.id || null;
+    c.reagendadoEm = new Date().toISOString();
+    novo.pacienteId = c.pacienteId;
+    novo.status = 'ocupado';
+    state.reagendamentos[c.id] = { de: antigo?.id || null, para: novo.id, data: c.reagendadoEm };
+
+    notificar(c.pacienteId, 'reagendamento', `Sua consulta com ${prof?.nome||'profissional'} foi reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`);
+    notificar(null, 'reagendamento_profissional', `Consulta de ${getPaciente(c.pacienteId)?.nome||'cliente'} reagendada para ${formatarDataCurta(novo.data)} às ${novo.hora}.`, prof?.id);
+
+    document.getElementById('modal-reagendamento')?.remove();
+    await carregarConsultasPacienteSupabase();   // ressincroniza com o banco
+    mostrarToast('Consulta reagendada com sucesso.');
+    render();
+  } catch (erro) {
+    console.error('Erro ao reagendar:', erro);
+    mensagemErro('Não foi possível reagendar. Tente novamente.');
+    render();
+  }
+}
 function salvarAvaliacao(consultaId){ const c=state.consultas.find(x=>x.id===consultaId); if(!c||c.status!=='realizada')return; const nota=Number(document.getElementById('nota-av-'+consultaId)?.value||0); const comentario=(document.getElementById('coment-av-'+consultaId)?.value||'').trim(); if(nota<1||nota>5)return mensagemErro('Escolha uma nota de 1 a 5.'); state.avaliacoes[consultaId]={nota,comentario,criadoEm:new Date().toISOString()}; const h=getHorario(c.horarioId); notificar(null,'avaliacao_recebida',`Você recebeu uma avaliação de ${getPaciente(c.pacienteId)?.nome||'cliente'}.`,h?.profissionalId); mostrarToast('Avaliação enviada. Obrigado!'); render(); }
 function agendar(pacienteId, horarioId, opcoes = {}){
   const h = getHorario(horarioId);
