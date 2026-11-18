@@ -1942,14 +1942,34 @@ function registrarFalta(horarioId){
 }
 
 function registrarCancelamentoProfissional(horarioId){
-  const h=getHorario(horarioId); if(!h) return;
-  const c=state.consultas.find(x=>x.horarioId===horarioId && x.status==='confirmada');
-  if(!c) return;
-  const pacienteId=c.pacienteId, prof=getProfissional(h.profissionalId);
-  liberarHorarioEPromover(horarioId,c.id);
-  notificar(pacienteId,'cancelamento',`Sua consulta com ${prof.nome} foi cancelada pelo profissional.`);
-  notificar(null,'cancelamento_profissional',`A consulta de ${getPaciente(pacienteId)?.nome||'cliente'} em ${formatarDataCurta(h.data)} às ${h.hora} foi cancelada.`,prof.id);
-  mostrarToast('Consulta cancelada.'); render();
+  const c = state.consultas.find(x => x.horarioId === horarioId && x.status === 'confirmada');
+  if (c) cancelarConsultaProfissional(c.id);
+}
+
+// Profissional cancela a consulta (Supabase): libera o horário ou promove a fila e avisa o paciente.
+async function cancelarConsultaProfissional(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  if (!c || c.status !== 'confirmada') return;
+  if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+
+  const nomePaciente = getPaciente(c.pacienteId)?.nome || 'o paciente';
+  if (!confirm(`Cancelar a consulta de ${nomePaciente}? Se houver fila de espera, o próximo assume a vaga automaticamente.`)) return;
+  const motivo = prompt('Motivo do cancelamento (opcional, será enviado ao paciente):', '');
+  if (motivo === null) return;
+
+  try {
+    const { error } = await supabaseClient.rpc('cancelar_consulta_profissional_vezzo', {
+      p_consulta_id: c.supabaseId,
+      p_motivo: motivo.trim() || null
+    });
+    if (error) throw error;
+    await recarregarAgendaProfissional();
+    mostrarToast('Consulta cancelada e paciente avisado.');
+  } catch (erro) {
+    console.error('Erro ao cancelar consulta:', erro);
+    mensagemErro(erro?.message || 'Não foi possível cancelar a consulta.');
+  }
+  render();
 }
 
 async function marcarConsultaDadaConsulta(consultaId){
@@ -4516,6 +4536,7 @@ function telaProfissional(){
                 
                 <button onclick="marcarConsultaDadaConsulta(${c.id})" class="btn-primary px-3 py-2 text-xs font-medium">✓ Compareceu</button>
                 <button onclick="registrarFaltaConsulta(${c.id})" class="btn-brick px-3 py-2 text-xs font-medium">Faltou</button>
+                ${!passada ? `<button onclick="cancelarConsultaProfissional(${c.id})" class="btn-ghost px-3 py-2 text-xs font-medium">Cancelar consulta</button>` : ''}
                 </div></div>
             </div>`;
           }).join('') : `<div class="card bg-white p-5 text-sm text-[var(--ink-soft)]">Nenhuma consulta confirmada pendente. Quando um paciente agendar com você, ela aparecerá aqui.</div>`}
@@ -4850,6 +4871,7 @@ const acoes =
       : `<div class="flex flex-col gap-2">
           <button onclick="marcarConsultaDada(${h.id})" class="btn-primary px-3 py-1.5 text-xs font-medium w-full">Compareceu</button>
           <button onclick="registrarFalta(${h.id})" class="btn-brick px-3 py-1.5 text-xs font-medium w-full">Faltou</button>
+          ${h.pacienteId && !consultaJaPassou(h) ? `<button onclick="registrarCancelamentoProfissional(${h.id})" class="btn-ghost px-3 py-1.5 text-xs font-medium w-full">Cancelar consulta</button>` : ''}
         </div>`;
 
   return `
