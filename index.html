@@ -2778,6 +2778,29 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
       ...consultasLocais
     ];
 
+    // Confirmações vindas do banco (antes o profissional "adivinhava" localmente
+    // e mostrava "Aguardando confirmação" mesmo quando já estava confirmada).
+    try {
+      const { data: confs, error: erroConfs } =
+        await supabaseClient.rpc('listar_confirmacoes_profissional_vezzo');
+      if (erroConfs) throw erroConfs;
+
+      consultasLocais.forEach(c => { delete state.confirmacoes[c.id]; });
+      const idLocalPorSupabaseId = new Map(consultasLocais.map(c => [c.supabaseId, c.id]));
+      (confs || []).forEach(cf => {
+        const idLocal = idLocalPorSupabaseId.get(cf.consulta_id);
+        if (!idLocal) return;
+        state.confirmacoes[idLocal] = {
+          status: cf.status,
+          auto: cf.automatica,
+          confirmadoEm: cf.confirmado_em,
+          aceiteAte: cf.prazo_aceite ? new Date(cf.prazo_aceite).getTime() : undefined
+        };
+      });
+    } catch (erroConf) {
+      console.error('Erro ao carregar confirmações do profissional:', erroConf);
+    }
+
 
     state.agendas = [
       ...state.agendas.filter(a => a.profissionalId !== profissionalId),
@@ -3212,7 +3235,7 @@ async function marcarTodasNotificacoesLidas(){
 function iconeTipoNotificacao(tipo){
   const mapa = {
     confirmacao: '✅', fila: '⏳', promocao: '🎉', cancelamento: '❌',
-    lembrete: '⏰', lembrete24: '⏰', lembrete2h: '⏰', confirmacao_pendente: '⚠️', realizada: '✔️', fila_encerrada: 'ℹ️', novo_agendamento: '📌', cancelamento_profissional: '↩️', cancelamento_paciente:'❌', promocao_profissional:'🎉', alerta_faltas:'⚠️', cliente_confirmou:'✅', oferta_encaixe:'⚡', encaixe_info:'⚡',
+    lembrete: '⏰', lembrete24: '⏰', lembrete2h: '⏰', confirmacao_pendente: '⚠️', realizada: '✔️', fila_encerrada: 'ℹ️', novo_agendamento: '📌', cancelamento_profissional: '↩️', cancelamento_paciente:'❌', promocao_profissional:'🎉', alerta_faltas:'⚠️', cliente_confirmou:'✅', oferta_encaixe:'⚡', encaixe_info:'⚡', reagendamento:'🔄', reagendamento_profissional:'🔄', falta:'⚠️', falta_profissional:'⚠️', avaliacao_recebida:'⭐',
   };
   return mapa[tipo] || '🔔';
 }
@@ -3220,7 +3243,7 @@ function iconeTipoNotificacao(tipo){
 function painelNotificacoes(){
   const ehPaciente = state.usuario.tipo === 'paciente';
   const minhas = state.notificacoes.filter(n => (ehPaciente ? n.pacienteId === state.usuario.id : n.profissionalId === state.usuario.id)).slice(0, 30);
-  const categoria = n => ['confirmacao_pendente','cancelamento_paciente','novo_agendamento','alerta_faltas','oferta_encaixe'].includes(n.tipo) ? 'Ação necessária' : ['lembrete24','lembrete2h','fila','promocao','confirmacao'].includes(n.tipo) ? 'Atualização' : ['realizada','cancelamento','cancelamento_profissional','fila_encerrada','encaixe_info'].includes(n.tipo) ? 'Informação' : 'Atualização';
+  const categoria = n => ['confirmacao_pendente','cancelamento_paciente','novo_agendamento','alerta_faltas','oferta_encaixe','reagendamento_profissional'].includes(n.tipo) ? 'Ação necessária' : ['lembrete24','lembrete2h','fila','promocao','confirmacao'].includes(n.tipo) ? 'Atualização' : ['realizada','cancelamento','cancelamento_profissional','fila_encerrada','encaixe_info'].includes(n.tipo) ? 'Informação' : 'Atualização';
   const grupos = ['Ação necessária','Atualização','Informação'].map(cat=>({cat,itens:minhas.filter(n=>categoria(n)===cat)})).filter(g=>g.itens.length);
   return `<div class="notif-panel card shadow-lg bg-[var(--surface)]"><div class="flex items-center justify-between px-3 py-2 border-b border-[var(--line)]"><span class="font-medium text-sm">Notificações</span><button onclick="marcarTodasNotificacoesLidas()" class="text-xs text-[var(--primary)] underline underline-offset-2">Marcar todas como lidas</button></div><div class="p-2">${grupos.length?grupos.map(g=>`<div class="mb-3"><div class="notification-category px-2 pt-1">${g.cat}</div>${g.itens.map(n=>{
     let acoes = '';
