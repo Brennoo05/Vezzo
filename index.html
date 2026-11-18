@@ -5128,9 +5128,26 @@ setInterval(() => {
 }, 60000);
 
 // Busca notificações novas no Supabase a cada 20 segundos
+// Recarrega horários e consultas do profissional sem perder a agenda selecionada
+async function recarregarAgendaProfissional(){
+  const agendaAtualSupabaseId = state.agendas.find(a => a.id === agendaSelecionadaId)?.supabaseId;
+  try {
+    await carregarAgendasHorariosSupabase(state.usuario.id);
+    const mesmaAgenda = state.agendas.find(a => a.supabaseId === agendaAtualSupabaseId);
+    if (mesmaAgenda) agendaSelecionadaId = mesmaAgenda.id;
+  } catch (erro) {
+    console.error('Erro ao atualizar a agenda:', erro);
+  }
+}
+
+// Busca notificações novas no Supabase a cada 20 segundos
 setInterval(async () => {
   if (!state.usuario) return;
   const chegouNova = await carregarNotificacoesSupabase();
+  // Chegou aviso novo para o profissional (agendamento, cancelamento, fila...): atualiza a agenda também
+  if (chegouNova && state.usuario?.tipo === 'profissional') {
+    await recarregarAgendaProfissional();
+  }
   if (chegouNova) render();
 }, 20000);
 
