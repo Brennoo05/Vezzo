@@ -1263,13 +1263,93 @@ function renderToasts(){
 
 function mensagemErro(mensagem){ mostrarToast(mensagem, 'error'); }
 
+// ===== NOTIFICAÇÕES NO SUPABASE =====
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function uuidOuNulo(v){ return (typeof v === 'string' && UUID_RE.test(v)) ? v : null; }
+function uuidPaciente(id){
+  if (id == null) return null;
+  const p = state.pacientes.find(x => String(x.id) === String(id));
+  return uuidOuNulo(p?.supabaseId) || uuidOuNulo(id);
+}
+function uuidProfissional(id){
+  if (id == null) return null;
+  const p = state.profissionais.find(x => String(x.id) === String(id));
+  return uuidOuNulo(p?.supabaseId) || uuidOuNulo(id);
+}
+function uuidConsulta(id){
+  if (id == null) return null;
+  const c = state.consultas.find(x => String(x.id) === String(id));
+  return uuidOuNulo(c?.supabaseId);
+}
+
 function notificar(pacienteId, tipo, mensagem, profissionalId = null){
-  state.notificacoes.unshift({
-    id: state.proximoIdNotificacao++,
+  const n = {
+    id: crypto.randomUUID(),
     pacienteId, profissionalId, tipo, mensagem,
     lida: false,
     criadaEm: new Date().toISOString(),
+    pendenteSync: true,
+  };
+  state.notificacoes.unshift(n);
+  // setTimeout: espera o código que chamou notificar() preencher n.consultaId, se houver
+  setTimeout(() => salvarNotificacaoSupabase(n), 0);
+}
+
+async function salvarNotificacaoSupabase(n){
+  const pacienteUuid = uuidPaciente(n.pacienteId);
+  const profissionalUuid = uuidProfissional(n.profissionalId);
+  if (!state.usuario || (!pacienteUuid && !profissionalUuid)) { n.pendenteSync = false; return; }
+
+  const { error } = await supabaseClient.from('notificacoes').insert({
+    id: n.id,
+    paciente_id: pacienteUuid,
+    profissional_id: profissionalUuid,
+    consulta_id: uuidConsulta(n.consultaId),
+    tipo: n.tipo,
+    mensagem: n.mensagem,
+    lida: n.lida,
+    criada_em: n.criadaEm
   });
+  n.pendenteSync = false;
+  if (error) console.error('Erro ao salvar notificação:', error);
+}
+
+// Busca as notificações do usuário logado. Retorna true se chegou alguma nova.
+async function carregarNotificacoesSupabase(){
+  if (!state.usuario || !['paciente', 'profissional'].includes(state.usuario.tipo)) return false;
+  const ehPaciente = state.usuario.tipo === 'paciente';
+  const coluna = ehPaciente ? 'paciente_id' : 'profissional_id';
+
+  const { data, error } = await supabaseClient
+    .from('notificacoes')
+    .select('*')
+    .eq(coluna, state.usuario.id)
+    .order('criada_em', { ascending: false })
+    .limit(50);
+
+  if (error) { console.error('Erro ao carregar notificações:', error); return false; }
+
+  const antigas = new Map(state.notificacoes.map(n => [String(n.id), n]));
+  const doBanco = (data || []).map(r => {
+    const antiga = antigas.get(String(r.id));
+    return {
+      id: r.id,
+      pacienteId: ehPaciente ? state.usuario.id : null,
+      profissionalId: ehPaciente ? null : state.usuario.id,
+      tipo: r.tipo,
+      mensagem: r.mensagem,
+      lida: !!r.lida,
+      criadaEm: r.criada_em,
+      consultaId: state.consultas.find(c => c.supabaseId === r.consulta_id)?.id ?? antiga?.consultaId ?? null,
+      ofertaEncaixeId: antiga?.ofertaEncaixeId
+    };
+  });
+
+  const idsBanco = new Set(doBanco.map(n => String(n.id)));
+  const pendentes = state.notificacoes.filter(n => n.pendenteSync && !idsBanco.has(String(n.id)));
+  state.notificacoes = [...pendentes, ...doBanco];
+  salvarDados();
+  return doBanco.some(n => !antigas.has(String(n.id)));
 }
 
 function pacienteTemConflito(pacienteId, data, hora){
@@ -1306,6 +1386,7 @@ function processarLembretes(){
   const agora = Date.now();
   const limite = Number(state.configuracoes.confirmacaoHoras) || 24;
   state.consultas.filter(c=>c.status==='confirmada').forEach(c=>{
+    if(state.usuario.tipo !== 'paciente' || c.pacienteId !== state.usuario.id) return; // lembretes só no app do próprio paciente
     const h=getHorario(c.horarioId); if(!h) return;
     const horas=horasAteConsulta(h);
     if(horas < 0) return;
@@ -1978,6 +2059,21 @@ if (error) throw error;
 // Atualiza a consulta cancelada localmente.
 consulta.status = 'cancelada';
 
+// Avisa o paciente e o profissional sobre o cancelamento.
+const nomePaciente = getPaciente(consulta.pacienteId)?.nome || state.usuario?.nome || 'O paciente';
+notificar(consulta.pacienteId, 'cancelamento',
+  `Sua consulta com ${prof?.nome || 'o profissional'} foi cancelada.`);
+notificar(null, 'cancelamento_paciente',
+  `${nomePaciente} cancelou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,
+  prof?.id);
+
+// Se alguém da fila assumiu a vaga, o profissional também é avisado.
+if (consultaPromovidaId) {
+  notificar(null, 'promocao_profissional',
+    `Um paciente da fila de espera foi promovido automaticamente para ${formatarDataCurta(h.data)} às ${h.hora}.`,
+    prof?.id);
+}
+
 // O Supabase já realizou a promoção.
 // Aqui apenas sincronizamos o estado visual do horário.
 h.fila = [];
@@ -1993,7 +2089,7 @@ if (consultaPromovidaId) {
 
 salvarDados();
 
-mostrarToast('Consulta cancelada e agenda atualizada.');
+mostrarToast('Consulta cancelada e profissional notificado.');
 render();
 
     } catch (erro) {
@@ -2791,6 +2887,7 @@ await carregarAgendasHorariosSupabase(profissional.id);
 await carregarConfiguracoesProfissionalSupabase(profissional.id);
     }
 
+    await carregarNotificacoesSupabase();
     render();
 
   } catch (erro) {
@@ -2927,6 +3024,7 @@ await carregarConfiguracoesProfissionalSupabase(profissional.id);
       throw new Error('Tipo de conta não reconhecido.');
     }
 
+    await carregarNotificacoesSupabase();
     render();
 
   } catch (erro) {
@@ -3019,6 +3117,7 @@ async function sair() {
     }
 
     state.usuario = null;
+    state.notificacoes = [];
     state.clinicaSelecionadaId = null;
     abaPaciente = 'profissionais';
     abaProfissional = 'painel';
@@ -3051,15 +3150,26 @@ function toggleNotificacoes(){
   render();
 }
 
-function marcarNotificacaoLida(id){
-  const n = state.notificacoes.find(n => n.id === id);
-  if (n) n.lida = true;
+async function marcarNotificacaoLida(id){
+  const n = state.notificacoes.find(n => String(n.id) === String(id));
+  if (!n || n.lida) return;
+  n.lida = true;
   render();
+  const { error } = await supabaseClient.from('notificacoes').update({ lida: true }).eq('id', n.id);
+  if (error) console.error('Erro ao marcar notificação como lida:', error);
 }
 
-function marcarTodasNotificacoesLidas(){
-  state.notificacoes.forEach(n => { if ((state.usuario.tipo === 'paciente' ? n.pacienteId : n.profissionalId) === state.usuario.id) n.lida = true; });
+async function marcarTodasNotificacoesLidas(){
+  if (!state.usuario) return;
+  const ehPaciente = state.usuario.tipo === 'paciente';
+  state.notificacoes.forEach(n => { if ((ehPaciente ? n.pacienteId : n.profissionalId) === state.usuario.id) n.lida = true; });
   render();
+  const { error } = await supabaseClient
+    .from('notificacoes')
+    .update({ lida: true })
+    .eq(ehPaciente ? 'paciente_id' : 'profissional_id', state.usuario.id)
+    .eq('lida', false);
+  if (error) console.error('Erro ao marcar notificações como lidas:', error);
 }
 
 function iconeTipoNotificacao(tipo){
@@ -3089,7 +3199,7 @@ function painelNotificacoes(){
         acoes = `<div class="mt-2 text-xs text-[var(--ink-soft)] font-medium">${fim[oferta.status]}</div>`;
       }
     }
-    return `<div class="p-3 rounded-lg text-sm ${n.lida?'bg-white':'bg-[var(--gold-bg)]'} cursor-pointer mb-1" onclick="marcarNotificacaoLida(${n.id})"><div class="flex items-start gap-2"><span>${iconeTipoNotificacao(n.tipo)}</span><div class="flex-1"><p>${escaparHtml(n.mensagem)}</p><p class="text-xs text-[var(--ink-soft)] mt-1">${new Date(n.criadaEm).toLocaleString('pt-BR')}</p>${acoes}</div>${!n.lida?'<span class="w-2 h-2 rounded-full bg-[var(--brick)] mt-1 flex-shrink-0"></span>':''}</div></div>`;
+    return `<div class="p-3 rounded-lg text-sm ${n.lida?'bg-white':'bg-[var(--gold-bg)]'} cursor-pointer mb-1" onclick="marcarNotificacaoLida('${n.id}')"><div class="flex items-start gap-2"><span>${iconeTipoNotificacao(n.tipo)}</span><div class="flex-1"><p>${escaparHtml(n.mensagem)}</p><p class="text-xs text-[var(--ink-soft)] mt-1">${new Date(n.criadaEm).toLocaleString('pt-BR')}</p>${acoes}</div>${!n.lida?'<span class="w-2 h-2 rounded-full bg-[var(--brick)] mt-1 flex-shrink-0"></span>':''}</div></div>`;
   }).join('')}</div>`).join(''):'<div class="p-4 text-sm text-[var(--ink-soft)]">Sem notificações por enquanto.</div>'}</div></div>`;
 }
 
@@ -5016,6 +5126,13 @@ setInterval(() => {
   salvarDados();
   if (state.notificacoes.length !== n) render();
 }, 60000);
+
+// Busca notificações novas no Supabase a cada 20 segundos
+setInterval(async () => {
+  if (!state.usuario) return;
+  const chegouNova = await carregarNotificacoesSupabase();
+  if (chegouNova) render();
+}, 20000);
 
 </script>
 
