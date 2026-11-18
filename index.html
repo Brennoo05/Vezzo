@@ -1240,6 +1240,31 @@ function uuidConsulta(id){
 }
 
 // Nome do paciente para mensagens: no app do próprio paciente, usa o nome de quem está logado
+// Limpa a cópia local (localStorage) dos dados que vêm do Supabase.
+// Evita misturar dados antigos do navegador com os do banco (ex.: horário aparecendo duplicado).
+function limparCacheLocal(){
+  state.agendas = [];
+  state.horarios = [];
+  state.consultas = [];
+  state.pacientes = [];
+  state.confirmacoes = {};
+  state.recorrencias = [];
+  state.bloqueios = [];
+  state.anotacoesPrivadas = {};
+  state.avaliacoes = {};
+  state.avaliacoesPorProfissional = {};
+  state.preferenciasEncaixe = [];
+  state.ofertasEncaixe = [];
+  state.notificacoes = [];
+  state.reagendamentos = {};
+  state.proximoIdAgenda = 1;
+  state.proximoIdHorario = 1;
+  state.proximoIdConsulta = 1;
+  state.proximoIdPaciente = 1;
+  state.proximoIdRecorrencia = 1;
+  state.proximoIdBloqueio = 1;
+}
+
 function nomeDoPaciente(pacienteId){
   const p = getPaciente(pacienteId);
   if (p?.nome) return p.nome;
@@ -1344,7 +1369,7 @@ function consultaJaPassou(h){
   if(!h || !h.data || !h.hora) return false;
   return horasAteConsulta(h) <= 0;
 }
-function lembreteChave(c, tipo){ return `${c.id}:${tipo}`; }
+function lembreteChave(c, tipo){ return `${c.supabaseId || c.id}:${tipo}`; }
 function processarLembretes(){
   encProcessar();
   if(!state.usuario) return;
@@ -2977,6 +3002,8 @@ async function fazerLogin() {
       return;
     }
 
+    limparCacheLocal();
+
     if (perfil.tipo === 'paciente') {
       const { data: paciente, error: erroPaciente } = await supabaseClient
         .from('pacientes')
@@ -3086,6 +3113,8 @@ async function restaurarSessaoSupabase() {
     if (erroPerfil || !perfil) {
       throw erroPerfil || new Error('Perfil não encontrado.');
     }
+
+    limparCacheLocal();
 
     if (perfil.tipo === 'paciente') {
       const { data: paciente, error: erroPaciente } = await supabaseClient
