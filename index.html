@@ -1341,7 +1341,7 @@ async function carregarNotificacoesSupabase(){
       lida: !!r.lida,
       criadaEm: r.criada_em,
       consultaId: state.consultas.find(c => c.supabaseId === r.consulta_id)?.id ?? antiga?.consultaId ?? null,
-      ofertaEncaixeId: antiga?.ofertaEncaixeId
+      ofertaEncaixeId: r.oferta_encaixe_id ?? antiga?.ofertaEncaixeId
     };
   });
 
@@ -1804,96 +1804,98 @@ function encFechar(o, status, msgPaciente){
   if (msgPaciente) { notificar(o.pacienteId, 'encaixe_info', msgPaciente); state.notificacoes[0].ofertaEncaixeId = o.id; }
 }
 // Encerra preferências vencidas/inválidas e resolve ofertas expiradas, canceladas ou cuja vaga foi ocupada
-function encProcessar(){
-  const agora = Date.now();
-  (state.preferenciasEncaixe || []).forEach(p => {
-    if (!p.ativa) return;
-    if (p.dataLimite && agora > encLimite(p).getTime()) { p.ativa = false; p.encerradaMotivo = 'limite'; }
-    else if (encMotivoConsulta(state.consultas.find(x => x.id === p.consultaId), p.pacienteId)) { p.ativa = false; p.encerradaMotivo = 'consulta'; }
-  });
-  (state.ofertasEncaixe || []).forEach(o => {
-    if (o.status !== 'pendente') return;
-    const c = state.consultas.find(x => x.id === o.consultaId);
-    if (encMotivoConsulta(c, o.pacienteId)) return encFechar(o, 'cancelada');
-    if (o.expiraEm && agora >= new Date(o.expiraEm).getTime()) return encFechar(o, 'expirada', 'Essa vaga de antecipação expirou. Sua consulta original permanece mantida.');
-    const m = encMotivoVaga(c, getHorario(o.horarioLivreId));
-    if (m === 'ocupada' || m === 'inexistente') return encFechar(o, 'horario_indisponivel', 'Essa vaga já foi preenchida por outro paciente. Sua consulta original continua mantida.');
-    if (m) encFechar(o, 'cancelada');
-  });
-}
+// Expiração e validação das ofertas agora são feitas no banco (processar_encaixe_vezzo)
+function encProcessar(){}
 
 // Chamada sempre que uma vaga fica livre ou é criada: gera no máximo 1 oferta pendente por consulta
-function tentarEncaixe(horarioLivreId){
-  const hLivre = getHorario(horarioLivreId);
-  if (!hLivre || hLivre.status !== 'livre') return;
-  encProcessar();
-  let criou = false;
-  (state.preferenciasEncaixe || []).forEach(pref => {
-    if (!pref.ativa) return;                                                            // Regra 1
-    const c = state.consultas.find(x => x.id === pref.consultaId);
-    if (encMotivoConsulta(c, pref.pacienteId)) return;                                  // Regras 2–5
-    if (encPendente(c.id)) return;                                                      // 1 oferta pendente por consulta
-    if (!encFaixaOk(pref, hLivre.data, hLivre.hora)) return;                            // Regras 10–11
-    if (encDH(hLivre.data, hLivre.hora) > encLimite(pref)) return;                      // Regra 13
-    if (encMotivoVaga(c, hLivre)) return;                                               // Regras 6–9 e 12
-    const agora = Date.now(), min = Number(state.configuracoes.ofertaEncaixeMin) || 120;
-    const oferta = { id: state.proximoIdOfertaEncaixe++, consultaId: c.id, pacienteId: c.pacienteId, horarioLivreId: hLivre.id,
-      criadaEm: new Date(agora).toISOString(),
-      expiraEm: new Date(Math.min(agora + min * 60000, encDH(hLivre.data, hLivre.hora).getTime())).toISOString(), status: 'pendente' };
-    state.ofertasEncaixe.push(oferta);
-    const prof = getProfissional(hLivre.profissionalId);
-    notificar(c.pacienteId, 'oferta_encaixe', `⚡ Surgiu uma vaga mais cedo com ${prof.nome} para ${encQuando(hLivre)}. Você gostaria de antecipar sua consulta? Responda até ${new Date(oferta.expiraEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}.`);
-    state.notificacoes[0].ofertaEncaixeId = oferta.id;
-    criou = true;
-  });
-  if (criou) { salvarDados(); render(); }
-}
+// A busca de encaixe agora é feita no banco, pelo trigger trg_encaixe_horario_livre em "horarios"
+function tentarEncaixe(horarioLivreId){}
 
-function aceitarEncaixe(ofertaId){
-  encProcessar();                                   // Etapa 2: expira/invalida ofertas antes de qualquer mudança
-  const o = (state.ofertasEncaixe || []).find(x => x.id === ofertaId);
-  const manter = ' Sua consulta original continua mantida.';
-  const sair = msg => { salvarDados(); render(); mensagemErro(msg); };
+async function aceitarEncaixe(ofertaId){
+  const o = (state.ofertasEncaixe || []).find(x => String(x.id) === String(ofertaId));
   if (!o) return mensagemErro('Oferta não encontrada.');
-  if (state.usuario?.tipo !== 'paciente' || state.usuario.id !== o.pacienteId) return mensagemErro('Esta oferta pertence a outro paciente.');
-  if (o.status === 'expirada') return sair('Essa vaga de antecipação expirou. Sua consulta original permanece mantida.');
-  if (o.status === 'horario_indisponivel') return sair('Essa vaga já foi preenchida por outro paciente.' + manter);
-  if (o.status !== 'pendente') return sair('Essa oferta não está mais disponível.' + manter);
-  // Etapas 3–4: consulta original
-  const c = state.consultas.find(x => x.id === o.consultaId);
-  if (encMotivoConsulta(c, o.pacienteId)) { encFechar(o, 'cancelada'); return sair('Sua consulta atual não permite mais antecipação.'); }
-  // Etapas 5–6: nova vaga
-  const hL = getHorario(o.horarioLivreId), m = encMotivoVaga(c, hL);
-  if (m) {
-    const indisp = m === 'ocupada' || m === 'inexistente';
-    encFechar(o, indisp ? 'horario_indisponivel' : 'cancelada');
-    return sair((indisp ? 'Essa vaga já foi preenchida por outro paciente.' : 'Essa vaga não é mais compatível com a sua consulta.') + manter);
+  if (state.usuario?.tipo !== 'paciente') return mensagemErro('Esta oferta pertence a outro paciente.');
+  try {
+    const { error } = await supabaseClient.rpc('aceitar_encaixe_vezzo', { p_oferta_id: o.id });
+    if (error) throw error;
+    await carregarConsultasPacienteSupabase();
+    await carregarEncaixeSupabase();
+    await carregarNotificacoesSupabase();
+    mostrarToast('Encaixe aceito! Sua consulta foi antecipada.', 'success');
+  } catch (erro) {
+    console.error('Erro ao aceitar encaixe:', erro);
+    await carregarEncaixeSupabase();
+    mensagemErro(erro?.message || 'Não foi possível aceitar o encaixe.');
   }
-  // Etapa 7: tudo validado — só agora altera o estado
-  const hAtual = getHorario(c.horarioId), antigoId = hAtual.id, prof = getProfissional(hL.profissionalId), iso = new Date().toISOString();
-  const de = encQuando(hAtual), para = encQuando(hL), nome = getPaciente(c.pacienteId)?.nome || 'O paciente';
-  hL.pacienteId = c.pacienteId; hL.status = 'ocupado';
-  c.horarioId = hL.id; c.reagendadoDe = antigoId; c.reagendadoEm = iso; c.antecipadaPorEncaixe = true;
-  state.reagendamentos[c.id] = { de: antigoId, para: hL.id, data: iso, tipoReagendamento: 'antecipacao_encaixe', ofertaId: o.id };
-  state.confirmacoes[c.id] = { status: 'confirmada', confirmadoEm: iso, via: 'antecipacao_encaixe' }; // aceitar = confirmar o novo horário
-  delete state.lembretesEnviados[lembreteChave(c, '24h')]; delete state.lembretesEnviados[lembreteChave(c, '2h')];
-  o.status = 'aceita'; o.respondidaEm = iso;
-  const pref = encPref(c.id); if (pref) { pref.ativa = false; pref.encerradaMotivo = 'antecipada'; }
-  liberarHorarioEPromover(antigoId, null);          // libera o horário antigo e promove a fila existente
-  notificar(c.pacienteId, 'reagendamento', `Sua consulta com ${prof.nome} foi antecipada de ${de} para ${para}.`);
-  notificar(null, 'reagendamento_profissional', `${nome} aceitou uma antecipação de consulta. O atendimento foi alterado de ${de} para ${para}.`, prof.id);
-  mostrarToast('Encaixe aceito! Sua consulta foi antecipada.', 'success');
   render();
 }
 
-function recusarEncaixe(ofertaId){
-  encProcessar();
-  const o = (state.ofertasEncaixe || []).find(x => x.id === ofertaId);
-  if (!o || state.usuario?.tipo !== 'paciente' || state.usuario.id !== o.pacienteId) return;
-  if (o.status !== 'pendente') { salvarDados(); render(); return mensagemErro('Essa oferta já foi encerrada. Sua consulta original continua mantida.'); }
-  o.status = 'recusada'; o.respondidaEm = new Date().toISOString();  // consulta e preferência permanecem como estavam
-  mostrarToast('Tudo certo! Sua consulta atual foi mantida.');
+async function recusarEncaixe(ofertaId){
+  try {
+    const { error } = await supabaseClient.rpc('recusar_encaixe_vezzo', { p_oferta_id: ofertaId });
+    if (error) throw error;
+    await carregarEncaixeSupabase();
+    mostrarToast('Tudo certo! Sua consulta atual foi mantida.');
+  } catch (erro) {
+    console.error('Erro ao recusar encaixe:', erro);
+    mensagemErro('Não foi possível responder a oferta. Tente novamente.');
+  }
   render();
+}
+
+// Carrega preferências e ofertas de antecipação do paciente logado (Supabase).
+// Retorna true se algo mudou.
+async function carregarEncaixeSupabase(){
+  if (state.usuario?.tipo !== 'paciente') return false;
+  try {
+    // expira ofertas vencidas e procura vagas que já estejam livres
+    const { error: erroProc } = await supabaseClient.rpc('processar_encaixe_vezzo');
+    if (erroProc) console.error('Erro ao processar encaixe:', erroProc);
+
+    const [resPrefs, resOfertas] = await Promise.all([
+      supabaseClient.from('preferencias_encaixe').select('*').eq('paciente_id', state.usuario.id),
+      supabaseClient.from('ofertas_encaixe').select('*').eq('paciente_id', state.usuario.id)
+        .order('criada_em', { ascending: false }).limit(50)
+    ]);
+    if (resPrefs.error) throw resPrefs.error;
+    if (resOfertas.error) throw resOfertas.error;
+
+    const prefs = resPrefs.data || [], ofertas = resOfertas.data || [];
+    const idLocal = sid => state.consultas.find(c => c.supabaseId === sid)?.id;
+    const antes = JSON.stringify([state.preferenciasEncaixe, state.ofertasEncaixe]);
+
+    state.preferenciasEncaixe = prefs.map(p => {
+      const consultaId = idLocal(p.consulta_id);
+      if (consultaId == null) return null;
+      const horaLimite = p.hora_limite ? p.hora_limite.slice(0, 5) : '';
+      const vencida = Date.now() > encDH(p.data_limite, horaLimite || '23:59').getTime();
+      const aceita = ofertas.some(o => o.consulta_id === p.consulta_id && o.status === 'aceita');
+      return {
+        supabaseId: p.id, consultaId, pacienteId: p.paciente_id,
+        diasDisponiveis: p.dias_disponiveis || [], dataLimite: p.data_limite, horaLimite,
+        ativa: !!p.ativa,
+        encerradaMotivo: p.ativa ? undefined : (aceita ? 'antecipada' : vencida ? 'limite' : 'manual'),
+        criadaEm: p.criada_em
+      };
+    }).filter(Boolean);
+
+    state.ofertasEncaixe = ofertas.map(o => ({
+      id: o.id, consultaId: idLocal(o.consulta_id), pacienteId: o.paciente_id,
+      horarioLivreId: o.horario_livre_id, criadaEm: o.criada_em, expiraEm: o.expira_em,
+      respondidaEm: o.respondida_em, status: o.status
+    }));
+
+    ofertas.filter(o => o.status === 'aceita').forEach(o => {
+      const c = state.consultas.find(x => x.supabaseId === o.consulta_id);
+      if (c) c.antecipadaPorEncaixe = true;
+    });
+
+    salvarDados();
+    return JSON.stringify([state.preferenciasEncaixe, state.ofertasEncaixe]) !== antes;
+  } catch (erro) {
+    console.error('Erro ao carregar antecipações:', erro);
+    return false;
+  }
 }
 
 function encerrarFilaDoHorario(h){
@@ -2879,6 +2881,7 @@ await carregarAgendasHorariosSupabase(profissional.id);
 await carregarConfiguracoesProfissionalSupabase(profissional.id);
     }
 
+    await carregarEncaixeSupabase();
     await carregarNotificacoesSupabase();
     assinarNotificacoesRealtime();
     render();
@@ -3017,6 +3020,7 @@ await carregarConfiguracoesProfissionalSupabase(profissional.id);
       throw new Error('Tipo de conta não reconhecido.');
     }
 
+    await carregarEncaixeSupabase();
     await carregarNotificacoesSupabase();
     assinarNotificacoesRealtime();
     render();
@@ -3113,6 +3117,8 @@ async function sair() {
     pararNotificacoesRealtime();
     state.usuario = null;
     state.notificacoes = [];
+    state.preferenciasEncaixe = [];
+    state.ofertasEncaixe = [];
     state.clinicaSelecionadaId = null;
     abaPaciente = 'profissionais';
     abaProfissional = 'painel';
@@ -3189,7 +3195,7 @@ function painelNotificacoes(){
       const oferta = (state.ofertasEncaixe || []).find(o => o.id === n.ofertaEncaixeId);
       const fim = { aceita: 'Aceito. Consulta antecipada.', recusada: 'Você manteve a consulta atual.', expirada: 'Oferta expirada. Consulta original mantida.', horario_indisponivel: 'Vaga preenchida. Consulta original mantida.', cancelada: 'Oferta cancelada. Consulta original mantida.' };
       if (oferta && oferta.status === 'pendente') {
-        acoes = `<div class="flex gap-2 mt-2 flex-wrap"><button onclick="event.stopPropagation();aceitarEncaixe(${oferta.id})" class="btn-primary px-2.5 py-1.5 text-xs">ACEITAR ENCAIXE</button><button onclick="event.stopPropagation();recusarEncaixe(${oferta.id})" class="btn-ghost px-2.5 py-1.5 text-xs">MANTER CONSULTA ATUAL</button></div>`;
+        acoes = `<div class="flex gap-2 mt-2 flex-wrap"><button onclick="event.stopPropagation();aceitarEncaixe('${oferta.id}')" class="btn-primary px-2.5 py-1.5 text-xs">ACEITAR ENCAIXE</button><button onclick="event.stopPropagation();recusarEncaixe('${oferta.id}')" class="btn-ghost px-2.5 py-1.5 text-xs">MANTER CONSULTA ATUAL</button></div>`;
       } else if (oferta && fim[oferta.status] && n.tipo === 'oferta_encaixe') {
         acoes = `<div class="mt-2 text-xs text-[var(--ink-soft)] font-medium">${fim[oferta.status]}</div>`;
       }
@@ -3875,10 +3881,11 @@ function encRemoverFaixa(i, j){
 }
 function encEditar(i, j, campo, v){ encDraft.dias.find(x => x.diaSemana === i).faixas[j][campo] = v; }
 
-function salvarConfiguracaoEncaixe(consultaId){
+async function salvarConfiguracaoEncaixe(consultaId){
   const d = encDraft, c = state.consultas.find(x => x.id === consultaId), h = c && getHorario(c.horarioId);
   if (!d || d.consultaId !== consultaId || !c || !h) return;
   if (c.status !== 'confirmada') return mensagemErro('Só é possível antecipar uma consulta confirmada.');
+  if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
   const dias = d.dias.filter(x => x.faixas.length).map(x => ({ diaSemana: x.diaSemana, faixas: x.faixas.map(f => ({ inicio: f.inicio, fim: f.fim })).sort((a, b) => a.inicio.localeCompare(b.inicio)) }));
   if (!dias.length) return mensagemErro('Escolha ao menos um dia e uma faixa de horário.');
   for (const x of dias) for (let k = 0; k < x.faixas.length; k++) {
@@ -3889,22 +3896,39 @@ function salvarConfiguracaoEncaixe(consultaId){
   if (!d.dataLimite) return mensagemErro('Informe a data limite.');
   if (d.dataLimite > h.data) return mensagemErro('A data limite não pode ser depois da consulta atual.');
   if (encLimite({ dataLimite: d.dataLimite, horaLimite: d.horaLimite }).getTime() <= Date.now()) return mensagemErro('A data/hora limite precisa estar no futuro.');
-  const antiga = encPref(consultaId), iso = new Date().toISOString();
-  const nova = { consultaId, pacienteId: c.pacienteId, diasDisponiveis: dias, dataLimite: d.dataLimite, horaLimite: d.horaLimite || '', ativa: true, criadaEm: antiga?.criadaEm || iso, atualizadaEm: iso };
-  if (!state.preferenciasEncaixe) state.preferenciasEncaixe = [];
-  const idx = state.preferenciasEncaixe.findIndex(p => p.consultaId === consultaId);
-  if (idx >= 0) state.preferenciasEncaixe[idx] = nova; else state.preferenciasEncaixe.push(nova);
-  encFecharModal();
-  mostrarToast('Antecipação ativada. Avisaremos se surgir uma vaga mais cedo.', 'success');
-  render();
+
+  try {
+    const { error } = await supabaseClient.rpc('salvar_preferencia_encaixe_vezzo', {
+      p_consulta_id: c.supabaseId,
+      p_dias: dias,
+      p_data_limite: d.dataLimite,
+      p_hora_limite: d.horaLimite || null
+    });
+    if (error) throw error;
+    encFecharModal();
+    await carregarEncaixeSupabase();
+    await carregarNotificacoesSupabase();
+    mostrarToast('Antecipação ativada. Avisaremos se surgir uma vaga mais cedo.', 'success');
+    render();
+  } catch (erro) {
+    console.error('Erro ao salvar antecipação:', erro);
+    mensagemErro(erro?.message || 'Não foi possível salvar a antecipação.');
+  }
 }
-function desativarEncaixe(consultaId){
-  const p = encPref(consultaId);
-  if (p) { p.ativa = false; p.encerradaMotivo = 'manual'; }
-  (state.ofertasEncaixe || []).filter(o => o.consultaId === consultaId && o.status === 'pendente').forEach(o => encFechar(o, 'cancelada'));
-  encFecharModal();
-  mostrarToast('Antecipação desativada.');
-  render();
+async function desativarEncaixe(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  if (!c?.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+  try {
+    const { error } = await supabaseClient.rpc('desativar_preferencia_encaixe_vezzo', { p_consulta_id: c.supabaseId });
+    if (error) throw error;
+    encFecharModal();
+    await carregarEncaixeSupabase();
+    mostrarToast('Antecipação desativada.');
+    render();
+  } catch (erro) {
+    console.error('Erro ao desativar antecipação:', erro);
+    mensagemErro('Não foi possível desativar a antecipação.');
+  }
 }
 function encStatusHtml(c){
   if (c.status !== 'confirmada') return '';
@@ -5141,7 +5165,14 @@ async function atualizarNotificacoesEAgenda(){
   if (chegouNova && state.usuario?.tipo === 'profissional') {
     await recarregarAgendaProfissional();
   }
-  if (chegouNova) render();
+  let mudouEncaixe = false;
+  if (state.usuario?.tipo === 'paciente') {
+    if (chegouNova) {
+      try { await carregarConsultasPacienteSupabase(); } catch (e) { console.error(e); }
+    }
+    mudouEncaixe = await carregarEncaixeSupabase();
+  }
+  if (chegouNova || mudouEncaixe) render();
 }
 
 // ===== REALTIME: avisa na hora quando entra uma notificação nova =====
