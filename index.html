@@ -1566,16 +1566,8 @@ function agendar(pacienteId, horarioId, opcoes = {}){
     alvo.filaOrigem.push(h.agendaId);
     alvo.status = 'lotado';
     state.consultas.push({ id: state.proximoIdConsulta++, pacienteId, horarioId: alvo.id, status: 'fila' });
-    // Avisa o titular (ainda sem confirmação) que alguém entrou na fila
-    if (!opcoes.silencioso) {
-      const tit = state.consultas.find(x => x.horarioId===alvo.id && x.status==='confirmada');
-      const conf = tit && state.confirmacoes[tit.id];
-      if (conf && conf.status==='pendente' && !conf.avisoFila && horasAteConsulta(alvo) > (Number(state.configuracoes.confirmacaoHoras)||24)) {
-        conf.avisoFila = true;
-        notificar(tit.pacienteId, 'confirmacao_pendente', `Alguém entrou na fila de espera para sua consulta com ${prof.nome} (${formatarDataCurta(alvo.data)} às ${alvo.hora}). Confirme até ${formatarPrazoConfirmacao(alvo)} para garantir sua vaga.`);
-        state.notificacoes[0].consultaId = tit.id;
-      }
-    }
+    // O aviso ao titular ("alguém entrou na fila") agora é criado no banco,
+    // pelo trigger trg_avisar_titular_fila na tabela fila_espera.
     if (!opcoes.silencioso) {
       notificar(pacienteId, 'fila',
         `Você entrou na fila de espera para ${formatarDataCurta(alvo.data)} às ${alvo.hora}. Sua posição é ${alvo.fila.length}.`);
