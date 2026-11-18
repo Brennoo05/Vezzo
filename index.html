@@ -2061,12 +2061,8 @@ notificar(null, 'cancelamento_paciente',
   `${nomePaciente} cancelou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,
   prof?.id);
 
-// Se alguém da fila assumiu a vaga, o profissional também é avisado.
-if (consultaPromovidaId) {
-  notificar(null, 'promocao_profissional',
-    `Um paciente da fila de espera foi promovido automaticamente para ${formatarDataCurta(h.data)} às ${h.hora}.`,
-    prof?.id);
-}
+// Se alguém da fila assumiu a vaga, o aviso (para o promovido e para o profissional)
+// é criado no banco pelo trigger trg_avisar_promovido_fila.
 
 // O Supabase já realizou a promoção.
 // Aqui apenas sincronizamos o estado visual do horário.
