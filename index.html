@@ -1210,7 +1210,13 @@ function salvarDados() {
 
 function getPaciente(id){ return state.pacientes.find(p => p.id === id); }
 function getProfissional(id){ return state.profissionais.find(p => p.id === id); }
-function getHorario(id){ return state.horarios.find(h => h.id === id); }
+function getHorario(id) {
+  const horarios = state.horarios.filter(h => h.id === id);
+
+  return horarios.find(h =>
+    state.profissionais.some(p => p.id === h.profissionalId)
+  ) || horarios[0];
+}
 function getClinica(id){ return state.clinicas.find(c => c.id === id); }
 function gerarCodigoConvite(){
   const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
