@@ -3040,7 +3040,7 @@ async function fazerLogin() {
     }
 
     if (perfil.tipo !== tipoContaSelecionado) {
-      await supabaseClient.auth.signOut();
+      await supabaseClient.auth.signOut({ scope: 'local' });
       mensagemErro('Selecione o tipo de conta correto.');
       return;
     }
@@ -3318,7 +3318,7 @@ function alternarModalidadeCadastro(v){
 
 async function sair() {
   try {
-    const { error } = await supabaseClient.auth.signOut();
+    const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
 
     if (error) {
       console.error('Erro ao sair:', error);
