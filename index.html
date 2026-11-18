@@ -3924,7 +3924,7 @@ function telaPacientePerfil(){
           </div>` : ''}
         </div>
 
-        ${(()=>{ const r=resumoAvaliacoes(p.id), aval=avaliacoesDoProfissional(p.id); return `<div class="mt-5 pt-4 border-t border-[var(--line)]"><div class="flex items-center justify-between gap-3"><h4 class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium">Avaliações</h4><span class="text-sm font-medium">${r.quantidade?`★ ${r.media.toFixed(1)} · ${r.quantidade} avaliação(ões)`:'Ainda sem avaliações'}</span></div>${aval.length?aval.slice().reverse().slice(0,3).map(a=>`<div class="mt-3 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong>${a.comentario?`<p class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</p>`:''}</div>`).join(''):''}</div>`; })()}
+        ${(()=>{ const r=resumoAvaliacoes(p.id); return `<div class="mt-5 pt-4 border-t border-[var(--line)]"><h4 class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações</h4>${blocoMediaAvaliacoes(r)}</div>`; })()}
 
         <button onclick="abrirAgendaProfissional()" class="btn-primary w-full py-2.5 text-sm font-medium mt-6">Ver agenda</button>
       </div>
@@ -4489,6 +4489,39 @@ function avaliacaoHtml(c){
   ).join('');
   return `<div class="flex items-center gap-1 mt-2 flex-wrap"><span class="text-xs text-[var(--ink-soft)] mr-1">Avalie o atendimento:</span><span class="inline-flex" onmouseleave="this.querySelectorAll('[data-n]').forEach(b => b.textContent = '☆')">${estrelas}</span></div>`;
 }
+function estrelasMediaHtml(media, tamanho = '1.15rem'){
+  const nota = Math.max(0, Math.min(5, Number(media) || 0));
+  const pct = (nota / 5) * 100;
+  return `<span role="img" aria-label="Nota ${nota.toFixed(1)} de 5" style="position:relative;display:inline-block;font-size:${tamanho};line-height:1;letter-spacing:2px;color:#E7E5E4;white-space:nowrap">★★★★★<span aria-hidden="true" style="position:absolute;left:0;top:0;width:${pct}%;overflow:hidden;color:#B45309">★★★★★</span></span>`;
+}
+
+function textoQtdAvaliacoes(qtd){
+  return `${qtd} ${qtd === 1 ? 'avaliação' : 'avaliações'}`;
+}
+
+// Resumo em uma linha: média + estrelas + quantidade
+function blocoMediaAvaliacoes(r){
+  if (!r.quantidade) return '<div class="text-sm text-[var(--ink-soft)]">Ainda sem avaliações</div>';
+  return `<div class="flex items-center gap-3 flex-wrap">
+    <span class="font-display text-3xl text-[var(--ink)]">${r.media.toFixed(1)}</span>
+    <div>${estrelasMediaHtml(r.media)}<div class="text-xs text-[var(--ink-soft)] mt-1">${textoQtdAvaliacoes(r.quantidade)}</div></div>
+  </div>`;
+}
+
+// Distribuição das notas (só para o próprio profissional)
+function barrasNotasHtml(r){
+  if (!r.quantidade) return '';
+  const linhas = [[5, r.cinco], [4, r.quatro], [3, r.tres], [2, r.dois], [1, r.um]];
+  return `<div class="mt-4 space-y-1.5">${linhas.map(([n, qtd]) => {
+    const pct = Math.round((qtd / r.quantidade) * 100);
+    return `<div class="flex items-center gap-2 text-xs">
+      <span class="w-6 text-right text-[var(--ink-soft)]">${n}★</span>
+      <div class="flex-1 rounded-full overflow-hidden" style="height:8px;background:#F1EFEC"><div style="height:100%;width:${pct}%;background:#B45309"></div></div>
+      <span class="w-8 text-[var(--ink-soft)]">${qtd}</span>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 function resumoAvaliacoes(profId){
   const arr = avaliacoesDoProfissional(profId);
   const media = arr.length ? arr.reduce((s,a)=>s+Number(a.nota),0)/arr.length : 0;
@@ -4864,7 +4897,7 @@ function telaProfissional(){
         <button onclick="salvarConfiguracoesAgenda()" class="btn-primary px-4 py-2 text-sm mt-4">Salvar regras</button>
       </div>
 
-      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado no Vezzo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`★ ${r.media.toFixed(1)} (${r.quantidade})`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${aval.length?aval.slice().reverse().slice(0,5).map(a=>`<div class="border-t border-[var(--line)] py-2 text-sm"><strong>${'★'.repeat(Number(a.nota))}${'☆'.repeat(5-Number(a.nota))}</strong> · ${escaparHtml(a.paciente?.nome||'Paciente')}${a.comentario?`<div class="text-xs text-[var(--ink-soft)] mt-1">${escaparHtml(a.comentario)}</div>`:''}</div>`).join(''):'<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
+      ${(()=>{ const p=getProfissional(state.usuario.id), r=resumoAvaliacoes(state.usuario.id), aval=avaliacoesDoProfissional(state.usuario.id); return `<div class="card p-5 bg-white"><div class="flex items-start gap-4"><div class="avatar-circle" style="width:72px;height:72px;font-size:2rem;">${p.avatar||'🧑⚕️'}</div><div class="flex-1"><h3 class="font-display text-xl">${escaparHtml(p.nome)}</h3><p class="text-sm text-[var(--ink-soft)]">${escaparHtml(p.profissao)} · ${escaparHtml(p.especialidade||'')}</p><p class="text-sm mt-2">${escaparHtml(p.descricao||'Profissional cadastrado no Vezzo.')}</p></div></div><div class="grid sm:grid-cols-3 gap-3 mt-5"><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Modalidade</div><div class="text-sm mt-1">${p.modalidadeAtendimento==='ambos'?'💻📍 Online e presencial':p.modalidadeAtendimento==='online'?'💻 Online':'📍 Presencial'}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Local</div><div class="text-sm mt-1">${escaparHtml(p.localAtendimento||'Atendimento online')}</div></div><div class="card p-3"><div class="text-xs text-[var(--ink-soft)]">Avaliação</div><div class="text-sm mt-1">${r.quantidade?`${estrelasMediaHtml(r.media, '0.95rem')} <span class="ml-1">${r.media.toFixed(1)}</span>`:'Ainda sem avaliações'}</div></div></div><div class="mt-4"><div class="text-xs uppercase tracking-wide text-[var(--ink-soft)] font-medium mb-2">Avaliações dos pacientes</div>${r.quantidade ? blocoMediaAvaliacoes(r) + barrasNotasHtml(r) : '<div class="text-sm text-[var(--ink-soft)]">Nenhuma avaliação recebida ainda.</div>'}</div></div>${relatorioProfissional()}`; })()}`;
 
   const conteudoAba = abaProfissional === 'agenda' ? conteudoAgenda : abaProfissional === 'config' ? conteudoConfig : conteudoPainel;
 
