@@ -1116,8 +1116,9 @@ function carregarDados() {
     state.ofertasEncaixe = Array.isArray(state.ofertasEncaixe) ? state.ofertasEncaixe : [];
     state.lembretesEnviados = state.lembretesEnviados && typeof state.lembretesEnviados === 'object' ? state.lembretesEnviados : {};
     state.configuracoes = state.configuracoes && typeof state.configuracoes === 'object' ? state.configuracoes : {};
-    state.horarios.forEach(h => { h.id=Number(h.id); h.profissionalId=Number(h.profissionalId); h.pacienteId=h.pacienteId==null?null:Number(h.pacienteId); h.fila=Array.isArray(h.fila)?h.fila.map(Number):[]; h.status=h.status|| (h.pacienteId?'ocupado':'livre'); if(!Array.isArray(h.filaOrigem) || h.filaOrigem.length!==h.fila.length) h.filaOrigem = h.fila.map(()=>h.agendaId); });
-    state.consultas.forEach(c => { c.id=Number(c.id); c.pacienteId=Number(c.pacienteId); c.horarioId=Number(c.horarioId); c.status=c.status||'confirmada'; });
+        const numOuTexto = v => (v == null ? v : (Number.isNaN(Number(v)) ? v : Number(v)));
+    state.horarios.forEach(h => { h.id=Number(h.id); h.profissionalId=Number(h.profissionalId); h.pacienteId=numOuTexto(h.pacienteId); h.fila=Array.isArray(h.fila)?h.fila.map(numOuTexto):[]; h.status=h.status|| (h.pacienteId?'ocupado':'livre'); if(!Array.isArray(h.filaOrigem) || h.filaOrigem.length!==h.fila.length) h.filaOrigem = h.fila.map(()=>h.agendaId); });
+    state.consultas.forEach(c => { c.id=Number(c.id); c.pacienteId=numOuTexto(c.pacienteId); c.horarioId=Number(c.horarioId); c.status=c.status||'confirmada'; });
     // Migração do encaixe: faixas múltiplas, ids inteiros de oferta, validade e paciente em estados antigos
     state.preferenciasEncaixe.forEach(p => {
       p.consultaId = Number(p.consultaId);
@@ -1312,29 +1313,14 @@ function processarLembretes(){
     const conf=state.confirmacoes[c.id];
     const nomePac=getPaciente(c.pacienteId)?.nome||'Cliente';
 
-    if(conf && conf.status==='pendente' && conf.aceiteAte){
-      if(agora >= conf.aceiteAte){
-        if(h.fila.length){
-          conf.status='expirada';
-          notificar(c.pacienteId,'cancelamento',`Você não confirmou a tempo e a vaga com ${prof.nome} (${formatarDataCurta(h.data)} às ${h.hora}) passou para o próximo da fila.`);
-          notificar(null,'cancelamento_paciente',`${nomePac} não confirmou a vaga a tempo (${formatarDataCurta(h.data)} às ${h.hora}); a vaga passou para o próximo da fila.`,prof.id);
-          liberarHorarioEPromover(h.id,c.id);
-        } else { conf.status='confirmada'; conf.auto=true; }
-      }
-    } else if(conf && conf.status==='pendente'){
-      if(horas <= limite && h.fila.length){
-        conf.status='expirada';
-        notificar(c.pacienteId,'cancelamento',`Sua reserva com ${prof.nome} (${formatarDataCurta(h.data)} às ${h.hora}) foi liberada porque não foi confirmada dentro do prazo.`);
-        notificar(null,'cancelamento_paciente',`${nomePac} não confirmou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}; a vaga foi repassada para a fila.`,prof.id);
-        liberarHorarioEPromover(h.id,c.id);
-        return;
-      }
-      if(horas <= limite && !conf.avisoPrazo){
-        conf.avisoPrazo=true;
+       if(conf && conf.status==='pendente' && !conf.aceiteAte){
+      // O vencimento (liberar a vaga e promover a fila) agora é feito pelo servidor.
+      if(horas <= limite && !state.lembretesEnviados[lembreteChave(c,'aviso_prazo')]){
+        state.lembretesEnviados[lembreteChave(c,'aviso_prazo')] = agora;
         notificar(c.pacienteId,'confirmacao_pendente',`O prazo para confirmar sua consulta com ${prof.nome} terminou. Confirme agora: se alguém entrar na fila, a vaga será repassada.`);
         state.notificacoes[0].consultaId=c.id;
-      } else if(horas > limite && horas <= limite+6 && !conf.lembretePrazo){
-        conf.lembretePrazo=true;
+      } else if(horas > limite && horas <= limite+6 && !state.lembretesEnviados[lembreteChave(c,'lembrete_prazo')]){
+        state.lembretesEnviados[lembreteChave(c,'lembrete_prazo')] = agora;
         notificar(c.pacienteId,'confirmacao_pendente',`Falta pouco: confirme sua consulta com ${prof.nome} até ${formatarPrazoConfirmacao(h)} para garantir a vaga.`);
         state.notificacoes[0].consultaId=c.id;
       }
@@ -2334,8 +2320,14 @@ if (!horarioLocal) {
     });
 
     // Substitui somente as consultas deste paciente.
+      // Remove cópias antigas (mesmo supabaseId) e consultas sem dono válido.
+    const idsSupabaseCarregados = new Set(consultasLocais.map(c => c.supabaseId));
     state.consultas = [
-      ...state.consultas.filter(c => c.pacienteId !== pacienteId),
+      ...state.consultas.filter(c =>
+        c.pacienteId !== pacienteId &&
+        !idsSupabaseCarregados.has(c.supabaseId) &&
+        (typeof c.pacienteId === 'string' || c.pacienteId > 0)
+      ),
       ...consultasLocais
     ];
 
