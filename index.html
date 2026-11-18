@@ -1239,6 +1239,14 @@ function uuidConsulta(id){
   return uuidOuNulo(c?.supabaseId);
 }
 
+// Nome do paciente para mensagens: no app do próprio paciente, usa o nome de quem está logado
+function nomeDoPaciente(pacienteId){
+  const p = getPaciente(pacienteId);
+  if (p?.nome) return p.nome;
+  if (state.usuario?.tipo === 'paciente' && String(state.usuario.id) === String(pacienteId)) return state.usuario.nome;
+  return 'Paciente';
+}
+
 function notificar(pacienteId, tipo, mensagem, profissionalId = null){
   const n = {
     id: crypto.randomUUID(),
@@ -1349,7 +1357,7 @@ function processarLembretes(){
     if(horas < 0) return;
     const prof=getProfissional(h.profissionalId); if(!prof) return;
     const conf=state.confirmacoes[c.id];
-    const nomePac=getPaciente(c.pacienteId)?.nome||'Cliente';
+    const nomePac=nomeDoPaciente(c.pacienteId);
 
        if(conf && conf.status==='pendente' && !conf.aceiteAte){
       // O vencimento (liberar a vaga e promover a fila) agora é feito pelo servidor.
@@ -1532,8 +1540,8 @@ function agendar(pacienteId, horarioId, opcoes = {}){
       } else {
         notificar(pacienteId, 'confirmacao', `Sua consulta com ${prof.nome} foi confirmada para ${formatarDataCurta(alvo.data)} às ${alvo.hora}.`);
       }
-      notificar(null, 'novo_agendamento', `${getPaciente(pacienteId)?.nome || 'Cliente'} agendou ${formatarDataCurta(alvo.data)} às ${alvo.hora}.`, prof.id);
-      if (muitasFaltas) notificar(null, 'alerta_faltas', `Atenção: ${getPaciente(pacienteId)?.nome || 'Cliente'} possui ${contarFaltasPaciente(pacienteId)} faltas registradas.`, prof.id);
+      notificar(null, 'novo_agendamento', `${nomeDoPaciente(pacienteId)} agendou ${formatarDataCurta(alvo.data)} às ${alvo.hora}.`, prof.id);
+      if (muitasFaltas) notificar(null, 'alerta_faltas', `Atenção: ${nomeDoPaciente(pacienteId)} possui ${contarFaltasPaciente(pacienteId)} faltas registradas.`, prof.id);
     }
   } else {
     alvo.fila.push(pacienteId);
@@ -1546,7 +1554,7 @@ function agendar(pacienteId, horarioId, opcoes = {}){
     if (!opcoes.silencioso) {
       notificar(pacienteId, 'fila',
         `Você entrou na fila de espera para ${formatarDataCurta(alvo.data)} às ${alvo.hora}. Sua posição é ${alvo.fila.length}.`);
-      notificar(null, 'fila', `${getPaciente(pacienteId)?.nome || 'Cliente'} entrou na fila de espera para ${formatarDataCurta(alvo.data)} às ${alvo.hora} (posição ${alvo.fila.length}).`, prof.id);
+      notificar(null, 'fila', `${nomeDoPaciente(pacienteId)} entrou na fila de espera para ${formatarDataCurta(alvo.data)} às ${alvo.hora}.`, prof.id);
     }
   }
   if (!opcoes.silencioso) render();
@@ -2115,7 +2123,7 @@ async function confirmarConsultaPaciente(consultaId){
     state.confirmacoes[c.id] = { status: 'confirmada', confirmadoEm: new Date().toISOString() };
     const h = getHorario(c.horarioId), prof = getProfissional(h.profissionalId);
     notificar(null, 'cliente_confirmou',
-      `${getPaciente(c.pacienteId)?.nome || 'Cliente'} confirmou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,
+      `${nomeDoPaciente(c.pacienteId)} confirmou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,
       prof.id);
     mostrarToast('Consulta confirmada.');
     render();
@@ -3267,8 +3275,12 @@ function iconeTipoNotificacao(tipo){
 function painelNotificacoes(){
   const ehPaciente = state.usuario.tipo === 'paciente';
   const minhas = state.notificacoes.filter(n => (ehPaciente ? n.pacienteId === state.usuario.id : n.profissionalId === state.usuario.id)).slice(0, 30);
-  const categoria = n => ['confirmacao_pendente','cancelamento_paciente','novo_agendamento','alerta_faltas','oferta_encaixe','reagendamento_profissional'].includes(n.tipo) ? 'Ação necessária' : ['lembrete24','lembrete2h','fila','promocao','confirmacao'].includes(n.tipo) ? 'Atualização' : ['realizada','cancelamento','cancelamento_profissional','fila_encerrada','encaixe_info'].includes(n.tipo) ? 'Informação' : 'Atualização';
-  const grupos = ['Ação necessária','Atualização','Informação'].map(cat=>({cat,itens:minhas.filter(n=>categoria(n)===cat)})).filter(g=>g.itens.length);
+  // Mais recentes primeiro: o que ainda não foi lido fica no topo
+  const ordenadas = minhas.slice().sort((a, b) => new Date(b.criadaEm) - new Date(a.criadaEm));
+  const grupos = [
+    { cat: 'Não lidas', itens: ordenadas.filter(n => !n.lida) },
+    { cat: 'Anteriores', itens: ordenadas.filter(n => n.lida) }
+  ].filter(g => g.itens.length);
   return `<div class="notif-panel card shadow-lg bg-[var(--surface)]"><div class="flex items-center justify-between px-3 py-2 border-b border-[var(--line)]"><span class="font-medium text-sm">Notificações</span><button onclick="marcarTodasNotificacoesLidas()" class="text-xs text-[var(--primary)] underline underline-offset-2">Marcar todas como lidas</button></div><div class="p-2">${grupos.length?grupos.map(g=>`<div class="mb-3"><div class="notification-category px-2 pt-1">${g.cat}</div>${g.itens.map(n=>{
     let acoes = '';
     if (n.consultaId && state.confirmacoes[n.consultaId]?.status==='pendente' && ehPaciente) {
