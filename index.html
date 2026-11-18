@@ -2639,6 +2639,42 @@ async function carregarAgendasHorariosSupabase(profissionalId) {
       agendasLocais.map(a => [a.supabaseId, a.id])
     );
 
+    // Recorrências e bloqueios também vêm do Supabase (antes ficavam só no navegador
+    // e "sumiam" ao atualizar a página, porque os ids locais das agendas mudam).
+    const [resRecorrencias, resBloqueios] = await Promise.all([
+      supabaseClient.from('recorrencias').select('*').eq('profissional_id', profissionalId),
+      supabaseClient.from('bloqueios').select('*').eq('profissional_id', profissionalId)
+    ]);
+    if (resRecorrencias.error) throw resRecorrencias.error;
+    if (resBloqueios.error) throw resBloqueios.error;
+
+    state.recorrencias = [
+      ...state.recorrencias.filter(r => r.profissionalId !== profissionalId),
+      ...(resRecorrencias.data || []).map(r => ({
+        id: state.proximoIdRecorrencia++,
+        supabaseId: r.id,
+        profissionalId,
+        agendaId: idsAgendas.get(r.agenda_id),
+        inicio: r.inicio,
+        fim: r.fim,
+        hora: String(r.hora).slice(0, 5),
+        modalidade: r.modalidade,
+        dias: (Array.isArray(r.dias) ? r.dias : []).map(Number)
+      }))
+    ];
+
+    state.bloqueios = [
+      ...state.bloqueios.filter(b => b.profissionalId !== profissionalId),
+      ...(resBloqueios.data || []).map(b => ({
+        id: state.proximoIdBloqueio++,
+        supabaseId: b.id,
+        profissionalId,
+        agendaId: idsAgendas.get(b.agenda_id),
+        data: b.data,
+        motivo: b.motivo || 'Indisponibilidade'
+      }))
+    ];
+
     // Cria ou atualiza os pacientes no estado local.
     const pacientesLocaisPorSupabaseId = new Map();
 
@@ -4410,7 +4446,7 @@ function telaProfissional(){
             <div><label class="text-xs text-[var(--ink-soft)] block mb-1">Modalidade</label><select id="rec-modalidade" class="w-full border border-[var(--line)] rounded-lg px-3 py-2 text-sm bg-[var(--bg)]"><option value="presencial">Presencial</option><option value="online">Online</option></select></div>
           </div>
           <button onclick="cadastrarRecorrencia()" class="btn-primary w-full px-4 py-2.5 text-sm font-medium">Criar horários recorrentes</button>
-          ${state.recorrencias.filter(r=>r.profissionalId===state.usuario.id && r.agendaId===agendaSelecionadaId).slice(-3).map(r=>{const nomes=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];return `<div class="mt-3 pt-3 border-t border-[var(--line)] flex items-center justify-between gap-3 text-xs"><span><strong>${r.dias.map(d=>nomes[d]).join(', ')}</strong> · ${r.hora}<br><span class="text-[var(--ink-soft)]">${formatarDataCurta(r.inicio)} → ${formatarDataCurta(r.fim)}</span></span><button onclick="removerRecorrencia(${r.id})" class="text-[var(--brick)]">Remover</button></div>`}).join('')}
+          ${state.recorrencias.filter(r=>r.profissionalId===state.usuario.id && r.agendaId===agendaSelecionadaId).sort((a,b)=>a.inicio.localeCompare(b.inicio)).map(r=>{const nomes=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];return `<div class="mt-3 pt-3 border-t border-[var(--line)] flex items-center justify-between gap-3 text-xs"><span><strong>${r.dias.map(d=>nomes[d]).join(', ')}</strong> · ${r.hora}<br><span class="text-[var(--ink-soft)]">${formatarDataCurta(r.inicio)} → ${formatarDataCurta(r.fim)}</span></span><button onclick="removerRecorrencia(${r.id})" class="text-[var(--brick)]">Remover</button></div>`}).join('')}
         </div>
 
         <div class="card p-5 bg-white">
