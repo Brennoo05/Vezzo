@@ -2888,6 +2888,7 @@ await carregarConfiguracoesProfissionalSupabase(profissional.id);
     }
 
     await carregarNotificacoesSupabase();
+    assinarNotificacoesRealtime();
     render();
 
   } catch (erro) {
@@ -3025,6 +3026,7 @@ await carregarConfiguracoesProfissionalSupabase(profissional.id);
     }
 
     await carregarNotificacoesSupabase();
+    assinarNotificacoesRealtime();
     render();
 
   } catch (erro) {
@@ -3116,6 +3118,7 @@ async function sair() {
       return;
     }
 
+    pararNotificacoesRealtime();
     state.usuario = null;
     state.notificacoes = [];
     state.clinicaSelecionadaId = null;
@@ -5127,7 +5130,6 @@ setInterval(() => {
   if (state.notificacoes.length !== n) render();
 }, 60000);
 
-// Busca notificações novas no Supabase a cada 20 segundos
 // Recarrega horários e consultas do profissional sem perder a agenda selecionada
 async function recarregarAgendaProfissional(){
   const agendaAtualSupabaseId = state.agendas.find(a => a.id === agendaSelecionadaId)?.supabaseId;
@@ -5140,16 +5142,41 @@ async function recarregarAgendaProfissional(){
   }
 }
 
-// Busca notificações novas no Supabase a cada 20 segundos
-setInterval(async () => {
+// Busca notificações novas e, se for profissional, atualiza a agenda também
+async function atualizarNotificacoesEAgenda(){
   if (!state.usuario) return;
   const chegouNova = await carregarNotificacoesSupabase();
-  // Chegou aviso novo para o profissional (agendamento, cancelamento, fila...): atualiza a agenda também
   if (chegouNova && state.usuario?.tipo === 'profissional') {
     await recarregarAgendaProfissional();
   }
   if (chegouNova) render();
-}, 20000);
+}
+
+// ===== REALTIME: avisa na hora quando entra uma notificação nova =====
+let canalNotificacoes = null;
+
+function assinarNotificacoesRealtime(){
+  pararNotificacoesRealtime();
+  if (!state.usuario || !['paciente', 'profissional'].includes(state.usuario.tipo)) return;
+  const coluna = state.usuario.tipo === 'paciente' ? 'paciente_id' : 'profissional_id';
+
+  canalNotificacoes = supabaseClient
+    .channel('notificacoes-' + state.usuario.id)
+    .on('postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'notificacoes', filter: `${coluna}=eq.${state.usuario.id}` },
+      () => atualizarNotificacoesEAgenda())
+    .subscribe();
+}
+
+function pararNotificacoesRealtime(){
+  if (canalNotificacoes) {
+    supabaseClient.removeChannel(canalNotificacoes);
+    canalNotificacoes = null;
+  }
+}
+
+// Plano B: se o Realtime cair, ainda confere a cada 60 segundos
+setInterval(atualizarNotificacoesEAgenda, 60000);
 
 </script>
 
