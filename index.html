@@ -432,7 +432,7 @@ function horarioBloqueado(profId, data, agendaId){ return state.bloqueios.some(b
    Se a consulta for cancelada, o horário volta a ficar disponível em todas as agendas. */
 function horariosEspelho(h){
   if (!h) return [];
-  return state.horarios.filter(x => x.id !== h.id
+  return state.horarios.filter(x => x.id !== h.id && x.status !== 'removido'
     && x.profissionalId === h.profissionalId
     && x.data === h.data
     && x.hora === h.hora);
@@ -477,7 +477,7 @@ function formatarLimiteExclusividade(h){
 function adicionarHorarioPorData(profId, data, hora, modalidade, agendaId){
   const ag = agendaId ?? agendaPadraoId(profId);
   if (horarioBloqueado(profId, data, ag)) return { ok:false, motivo:'bloqueado' };
-  const conflito = state.horarios.find(h => h.profissionalId===profId && h.data===data && h.hora===hora && h.agendaId===ag);
+  const conflito = state.horarios.find(h => h.status !== 'removido' && h.profissionalId===profId && h.data===data && h.hora===hora && h.agendaId===ag);
   if (conflito) return { ok:false, motivo:'conflito', agendaId: conflito.agendaId };
   const novoId = state.proximoIdHorario++;
   state.horarios.push({ id: novoId, profissionalId:profId, agendaId: ag, data, hora, modalidade, status:'livre', pacienteId:null, fila:[], filaOrigem:[] });
@@ -589,27 +589,23 @@ async function bloquearPeriodo() {
 
 async function desbloquearData(id) {
   const bloqueio = state.bloqueios.find(b => b.id === id);
-
   if (!bloqueio) return;
+  if (!bloqueio.supabaseId) return mensagemErro('Este bloqueio não está vinculado ao Supabase.');
 
   try {
-    const { error } = await supabaseClient
-      .from('bloqueios')
-      .delete()
-      .eq('id', bloqueio.supabaseId)
-      .eq('profissional_id', state.usuario.id);
-
+    const { error } = await supabaseClient.rpc('desbloquear_data_vezzo', {
+      p_bloqueio_id: bloqueio.supabaseId
+    });
     if (error) throw error;
 
     state.bloqueios = state.bloqueios.filter(b => b.id !== id);
-
     salvarDados();
     mostrarToast('Data liberada para novos horários.');
     render();
 
   } catch (erro) {
     console.error('Erro ao remover bloqueio:', erro);
-    mensagemErro('Não foi possível liberar essa data no Supabase.');
+    mensagemErro(erro?.message || 'Não foi possível liberar essa data.');
   }
 }
 function selecionarTodosDiasRecorrencia(tipo){
@@ -907,7 +903,7 @@ async function excluirAgenda(id) {
   }
 
   const ocupados = state.horarios.filter(
-    h => h.agendaId === id && (h.status !== 'livre' || h.pacienteId || h.fila.length)
+    h => h.agendaId === id && h.status !== 'removido' && (h.status !== 'livre' || h.pacienteId || h.fila.length)
   );
 
   if (ocupados.length) {
@@ -3338,11 +3334,11 @@ function gerarGradeCalendario(filtroProfissionalId = null, filtroAgendaId = null
   for (let i = 0; i < primeiroDiaSemana; i++) celulas += `<div class="cal-cell"></div>`;
   for (let dia = 1; dia <= totalDias; dia++) {
     const iso = `${ano}-${String(mes+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
-    const horariosDoDiaCal = filtroProfissionalId ? state.horarios.filter(h => h.data === iso && h.profissionalId === filtroProfissionalId) : [];
+    const horariosDoDiaCal = filtroProfissionalId ? state.horarios.filter(h => h.status !== 'removido' && h.data === iso && h.profissionalId === filtroProfissionalId) : [];
     // Para o paciente (mostrarAgendas=false) o ponto só aparece se o horário não estiver na janela de exclusividade de outra agenda.
     const temHorario = filtroProfissionalId
       ? horariosDoDiaCal.some(h => (filtroAgendaId ? h.agendaId === filtroAgendaId : true) && (mostrarAgendas || !dentroJanelaExclusividade(h)))
-      : state.horarios.some(h => h.data === iso);
+      : state.horarios.some(h => h.status !== 'removido' && h.data === iso);
     const bloqueado = filtroProfissionalId ? horarioBloqueado(filtroProfissionalId, iso, filtroAgendaId) : false;
     const agendasNoDia = mostrarAgendas ? [...new Set(horariosDoDiaCal.map(h => h.agendaId))] : [];
     const pontosAgendas = agendasNoDia.map(id => {
@@ -3828,7 +3824,7 @@ function telaPacienteAgenda(){
   }
 
   const horariosDoDia = state.horarios
-    .filter(h => h.profissionalId === prof.id && h.data === state.diaSelecionado && (agendaSelecionadaPacienteId ? h.agendaId === agendaSelecionadaPacienteId : true))
+    .filter(h => h.status !== 'removido' && h.profissionalId === prof.id && h.data === state.diaSelecionado && (agendaSelecionadaPacienteId ? h.agendaId === agendaSelecionadaPacienteId : true))
     // Esconde da lista se este horário ainda está na janela de exclusividade de outra agenda com maior prioridade.
     .filter(h => !dentroJanelaExclusividade(h))
     .sort((a,b) => a.hora.localeCompare(b.hora));
@@ -4396,7 +4392,7 @@ function datasDaSemana(iso){
   return Array.from({length:7},(_,i)=>dateParaISO(new Date(domingo.getFullYear(),domingo.getMonth(),domingo.getDate()+i)));
 }
 function horariosProfissionaisDaData(data){
-  return state.horarios.filter(h=>h.profissionalId===state.usuario.id && h.data===data && (agendaSelecionadaId ? h.agendaId===agendaSelecionadaId : true)).sort((a,b)=>a.hora.localeCompare(b.hora));
+  return state.horarios.filter(h=>h.status!=='removido' && h.profissionalId===state.usuario.id && h.data===data && (agendaSelecionadaId ? h.agendaId===agendaSelecionadaId : true)).sort((a,b)=>a.hora.localeCompare(b.hora));
 }
 function renderAgendaProfissional(){
   if(visaoAgendaProfissional==='dia'){
@@ -4452,7 +4448,7 @@ function telaProfissional(){
     agendaSelecionadaId = agendasDoProfissional(state.usuario.id)[0]?.id ?? null;
   }
   const horariosHoje = state.horarios
-    .filter(h => h.profissionalId === state.usuario.id && h.data === hoje)
+    .filter(h => h.status !== 'removido' && h.profissionalId === state.usuario.id && h.data === hoje)
     .sort((a,b) => a.hora.localeCompare(b.hora));
   const proximosHoje = horariosHoje.filter(h => !consultaJaPassou(h));
 
@@ -4461,7 +4457,7 @@ function telaProfissional(){
   const livresHoje = horariosHoje.filter(h => h.status === 'livre').length;
 
   const horariosDoDia = state.horarios
-    .filter(h => h.profissionalId === state.usuario.id && h.data === state.diaSelecionado && (agendaSelecionadaId ? h.agendaId === agendaSelecionadaId : true))
+    .filter(h => h.status !== 'removido' && h.profissionalId === state.usuario.id && h.data === state.diaSelecionado && (agendaSelecionadaId ? h.agendaId === agendaSelecionadaId : true))
     .sort((a,b) => a.hora.localeCompare(b.hora));
 
   const primeiroNome = state.usuario.nome.split(' ')[0];
@@ -4755,6 +4751,7 @@ function badgeStatus(status){
     ocupado: ['Ocupado', 'badge-ocupado'],
     lotado: ['Lotado (com fila)', 'badge-lotado'],
     concluido: ['Encerrado', 'badge-concluido'],
+    removido: ['Removido', 'badge-concluido'],
   };
   const [label, classe] = mapa[status] || [status, ''];
   return `<span class="badge ${classe}">${label}</span>`;
@@ -4843,7 +4840,8 @@ async function editarHorarioSupabase(id) {
     h.profissionalId === horario.profissionalId &&
     h.agendaId === horario.agendaId &&
     h.data === novaData &&
-    h.hora === novaHora
+    h.hora === novaHora &&
+    h.status !== 'removido'
   );
 
   if (conflito) {
