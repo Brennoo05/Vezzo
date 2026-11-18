@@ -1930,29 +1930,78 @@ function registrarCancelamentoProfissional(horarioId){
 }
 
 // Profissional cancela a consulta (Supabase): libera o horário ou promove a fila e avisa o paciente.
-async function cancelarConsultaProfissional(consultaId){
+// Abre o formulário de cancelamento (mesmo estilo do "Editar horário")
+function cancelarConsultaProfissional(consultaId){
   const c = state.consultas.find(x => x.id === consultaId);
   if (!c || c.status !== 'confirmada') return;
   if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+  const h = getHorario(c.horarioId);
+  if (!h) return;
 
-  const nomePaciente = getPaciente(c.pacienteId)?.nome || 'o paciente';
-  if (!confirm(`Cancelar a consulta de ${nomePaciente}? Se houver fila de espera, o próximo assume a vaga automaticamente.`)) return;
-  const motivo = prompt('Motivo do cancelamento (opcional, será enviado ao paciente):', '');
-  if (motivo === null) return;
+  const nomePaciente = getPaciente(c.pacienteId)?.nome || 'Paciente';
+  const temFila = (h.fila || []).length > 0;
+
+  fecharCancelamentoProfissional();
+  const modal = document.createElement('div');
+  modal.id = 'modal-cancelar-consulta';
+  modal.className = 'modal-overlay';
+  modal.addEventListener('click', e => { if (e.target === modal) fecharCancelamentoProfissional(); });
+  modal.innerHTML = `
+    <div class="card bg-white p-6 max-w-md w-full" role="dialog" aria-modal="true" aria-labelledby="titulo-cancelar-consulta">
+      <div class="flex justify-between items-center">
+        <h3 id="titulo-cancelar-consulta" class="font-display text-xl">Cancelar consulta</h3>
+        <button onclick="fecharCancelamentoProfissional()" class="btn-ghost px-3 py-1.5" aria-label="Fechar">✕</button>
+      </div>
+      <div class="card p-3 mt-4">
+        <div class="font-medium">${escaparHtml(nomePaciente)}</div>
+        <div class="text-sm text-[var(--ink-soft)] mt-1">${formatarDataCompleta(h.data)} · ${h.hora} · ${h.modalidade === 'online' ? '💻 Online' : '📍 Presencial'}</div>
+      </div>
+      <p class="text-xs text-[var(--ink-soft)] mt-3">
+        ${temFila
+          ? 'Há pacientes na fila de espera: o primeiro assume a vaga automaticamente e é avisado.'
+          : 'O horário volta a ficar livre para novos agendamentos.'}
+        O paciente recebe uma notificação do cancelamento.
+      </p>
+      <div class="mt-4">
+        <label for="cancel-prof-motivo" class="text-xs text-[var(--ink-soft)] block mb-1">Motivo <span class="opacity-70">(opcional, enviado ao paciente)</span></label>
+        <textarea id="cancel-prof-motivo" rows="3" maxlength="200" placeholder="Ex.: imprevisto, folga, mudança de agenda..." class="w-full rounded-lg px-3 py-2 text-sm"></textarea>
+      </div>
+      <div class="flex gap-2 mt-5">
+        <button onclick="fecharCancelamentoProfissional()" class="btn-ghost flex-1 py-2.5 text-sm">Voltar</button>
+        <button id="btn-confirmar-cancelamento-prof" onclick="confirmarCancelamentoProfissional(${consultaId})" class="btn-brick flex-1 py-2.5 text-sm font-medium">Cancelar consulta</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('cancel-prof-motivo')?.focus();
+}
+
+function fecharCancelamentoProfissional(){
+  document.getElementById('modal-cancelar-consulta')?.remove();
+}
+
+async function confirmarCancelamentoProfissional(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  if (!c || c.status !== 'confirmada') return fecharCancelamentoProfissional();
+  const motivo = (document.getElementById('cancel-prof-motivo')?.value || '').trim();
+
+  const botao = document.getElementById('btn-confirmar-cancelamento-prof');
+  if (botao) { botao.disabled = true; botao.textContent = 'Cancelando...'; }
 
   try {
     const { error } = await supabaseClient.rpc('cancelar_consulta_profissional_vezzo', {
       p_consulta_id: c.supabaseId,
-      p_motivo: motivo.trim() || null
+      p_motivo: motivo || null
     });
     if (error) throw error;
+    fecharCancelamentoProfissional();
     await recarregarAgendaProfissional();
     mostrarToast('Consulta cancelada e paciente avisado.');
+    render();
   } catch (erro) {
     console.error('Erro ao cancelar consulta:', erro);
+    if (botao) { botao.disabled = false; botao.textContent = 'Cancelar consulta'; }
     mensagemErro(erro?.message || 'Não foi possível cancelar a consulta.');
   }
-  render();
 }
 
 async function marcarConsultaDadaConsulta(consultaId){
