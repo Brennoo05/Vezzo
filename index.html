@@ -2009,7 +2009,9 @@ render();
 
     } catch (erro) {
       console.error('Erro ao cancelar consulta:', erro);
-      mensagemErro('Não foi possível cancelar a consulta. Tente novamente.');
+            mensagemErro(String(erro?.message || '').includes('prazo mínimo')
+        ? erro.message
+        : 'Não foi possível cancelar a consulta. Tente novamente.');
       render();
     }
   })();
@@ -2065,7 +2067,27 @@ function alternarTipoConta(tipo){
   render();
 }
 
+async function carregarConfiguracoesProfissionalSupabase(profissionalId) {
+  try {
+    const { data, error } = await supabaseClient.rpc('obter_configuracoes_vezzo', {
+      p_profissional_id: profissionalId
+    });
+    if (error) throw error;
+    if (!data) return;
 
+    state.configuracoes.cancelamentoHoras        = data.cancelamento_horas;
+    state.configuracoes.confirmacaoHoras         = data.confirmacao_horas;
+    state.configuracoes.janelaExclusividadeHoras = data.janela_exclusividade_horas;
+    state.configuracoes.aceiteFilaMin            = data.aceite_fila_min;
+    state.configuracoes.ofertaEncaixeMin         = data.oferta_encaixe_min;
+    state.configuracoes.lembrete24h              = data.lembrete_24h;
+    state.configuracoes.lembrete2h               = data.lembrete_2h;
+    salvarDados();
+  } catch (erro) {
+    console.error('Erro ao carregar configurações do profissional:', erro);
+    // mantém os valores atuais se falhar
+  }
+}
 
 async function carregarAgendaPacienteSupabase(profissionalLocalId) {
   try {
@@ -2076,6 +2098,7 @@ async function carregarAgendaPacienteSupabase(profissionalLocalId) {
     }
 
     const profissionalSupabaseId = profissional.supabaseId;
+    await carregarConfiguracoesProfissionalSupabase(profissionalSupabaseId);
 
     const { data: agendas, error: erroAgendas } = await supabaseClient
       .from('agendas')
@@ -2728,6 +2751,7 @@ state.usuario = {
 
 abaProfissional = 'painel';
 await carregarAgendasHorariosSupabase(profissional.id);
+await carregarConfiguracoesProfissionalSupabase(profissional.id);
     }
 
     render();
@@ -2860,6 +2884,7 @@ if (!profissionalLocal) {
 
       abaProfissional = 'painel';
 await carregarAgendasHorariosSupabase(profissional.id);
+await carregarConfiguracoesProfissionalSupabase(profissional.id);
 
     } else {
       throw new Error('Tipo de conta não reconhecido.');
@@ -3857,14 +3882,39 @@ function telaPaciente(){
 
 
 
-function salvarConfiguracoesAgenda(){
-  state.configuracoes.lembrete24h=!!document.getElementById('cfg-24h')?.checked;
-  state.configuracoes.lembrete2h=!!document.getElementById('cfg-2h')?.checked;
-  state.configuracoes.confirmacaoHoras=Math.max(1,Number(document.getElementById('cfg-conf')?.value||3));
-  state.configuracoes.cancelamentoHoras=Math.max(0,Number(document.getElementById('cfg-canc')?.value||4));
-  state.configuracoes.janelaExclusividadeHoras=Math.max(0,Number(document.getElementById('cfg-janela')?.value||0));
-  state.configuracoes.aceiteFilaMin=Math.max(0,Number(document.getElementById('cfg-aceite')?.value||0));
-  mostrarToast('Regras da agenda atualizadas.'); render();
+async function salvarConfiguracoesAgenda(){
+  const limitar = (v, min, max, padrao) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : padrao;
+  };
+
+  const cfg = {
+    lembrete24h: !!document.getElementById('cfg-24h')?.checked,
+    lembrete2h: !!document.getElementById('cfg-2h')?.checked,
+    confirmacaoHoras: limitar(document.getElementById('cfg-conf')?.value, 1, 48, 24),
+    cancelamentoHoras: limitar(document.getElementById('cfg-canc')?.value, 0, 72, 4),
+    janelaExclusividadeHoras: limitar(document.getElementById('cfg-janela')?.value, 0, 720, 48),
+    aceiteFilaMin: limitar(document.getElementById('cfg-aceite')?.value, 0, 720, 120)
+  };
+
+  try {
+    const { error } = await supabaseClient.rpc('salvar_configuracoes_vezzo', {
+      p_cancelamento_horas: cfg.cancelamentoHoras,
+      p_confirmacao_horas: cfg.confirmacaoHoras,
+      p_janela_exclusividade_horas: cfg.janelaExclusividadeHoras,
+      p_aceite_fila_min: cfg.aceiteFilaMin,
+      p_lembrete_24h: cfg.lembrete24h,
+      p_lembrete_2h: cfg.lembrete2h
+    });
+    if (error) throw error;
+
+    Object.assign(state.configuracoes, cfg);   // só atualiza a tela depois do banco confirmar
+    mostrarToast('Regras da agenda atualizadas.');
+    render();
+  } catch (erro) {
+    console.error('Erro ao salvar regras:', erro);
+    mensagemErro('Não foi possível salvar as regras. Tente novamente.');
+  }
 }
 
 function seletorAgendas(){
