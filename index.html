@@ -1910,20 +1910,28 @@ function encerrarFilaDoHorario(h){
   h.filaOrigem=[];
 }
 
-function registrarFaltaConsulta(consultaId){
-  const consulta=state.consultas.find(c=>c.id===consultaId);
-  if(!consulta || consulta.status!=='confirmada') return;
-  const h=getHorario(consulta.horarioId);
-  if(!h) return;
-  const pacienteId=consulta.pacienteId;
-  const prof=getProfissional(h.profissionalId);
-  consulta.status='faltou';
-  encerrarFilaDoHorario(h);
-  h.pacienteId=null;
-  h.status='concluido';
-  notificar(pacienteId,'falta',`A consulta com ${prof.nome} em ${formatarDataCurta(h.data)} às ${h.hora} foi registrada como falta.`);
-  notificar(null,'falta_profissional',`Você registrou falta de ${getPaciente(pacienteId)?.nome||'cliente'} em ${formatarDataCurta(h.data)} às ${h.hora}.`,prof.id);
-  mostrarToast('Falta registrada e consulta encerrada.');
+async function registrarFaltaConsulta(consultaId){
+  await registrarAtendimento(consultaId, 'faltou');
+}
+
+// Registra o resultado do atendimento no Supabase ('realizada' ou 'faltou'):
+// encerra a consulta, conclui o horário, encerra a fila e avisa os pacientes.
+async function registrarAtendimento(consultaId, resultado){
+  const consulta = state.consultas.find(c => c.id === consultaId);
+  if (!consulta || consulta.status !== 'confirmada') return;
+  if (!consulta.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+  try {
+    const { error } = await supabaseClient.rpc('registrar_atendimento_vezzo', {
+      p_consulta_id: consulta.supabaseId,
+      p_resultado: resultado
+    });
+    if (error) throw error;
+    await recarregarAgendaProfissional();
+    mostrarToast(resultado === 'realizada' ? 'Consulta marcada como realizada.' : 'Falta registrada e consulta encerrada.');
+  } catch (erro) {
+    console.error('Erro ao registrar atendimento:', erro);
+    mensagemErro(erro?.message || 'Não foi possível registrar o atendimento.');
+  }
   render();
 }
 
@@ -1944,18 +1952,8 @@ function registrarCancelamentoProfissional(horarioId){
   mostrarToast('Consulta cancelada.'); render();
 }
 
-function marcarConsultaDadaConsulta(consultaId){
-  const consulta=state.consultas.find(c=>c.id===consultaId);
-  if(!consulta || consulta.status!=='confirmada') return;
-  const h=getHorario(consulta.horarioId); if(!h) return;
-  const prof=getProfissional(h.profissionalId);
-  consulta.status='realizada';
-  encerrarFilaDoHorario(h);
-  h.pacienteId=null;
-  h.status='concluido';
-  notificar(consulta.pacienteId,'realizada',`Sua consulta com ${prof.nome} foi marcada como realizada.`);
-  mostrarToast('Consulta marcada como realizada.');
-  render();
+async function marcarConsultaDadaConsulta(consultaId){
+  await registrarAtendimento(consultaId, 'realizada');
 }
 
 function marcarConsultaDada(horarioId){
