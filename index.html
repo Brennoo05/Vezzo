@@ -1449,7 +1449,9 @@ async function carregarContatoPaciente(){
   }
 }
 
+const WHATSAPP_ATIVO = false; // mude para true quando o WhatsApp estiver configurado
 function cartaoWhatsappPaciente(){
+  if (!WHATSAPP_ATIVO) return '';
   if (state.usuario?.tipo !== 'paciente') return '';
   const ativo = state.usuario.whatsappOptIn && state.usuario.telefone;
   return `<div class="card bg-white p-4 flex items-center justify-between gap-3 flex-wrap">
@@ -5698,7 +5700,7 @@ async function fazerCadastro() {
   };
 
   if (tipo === 'paciente') {
-    dadosCadastro.whatsapp_opt_in = !!d.whatsapp && !!telefone;
+    dadosCadastro.whatsapp_opt_in = false; // WhatsApp desligado por enquanto
   } else {
     const profissao = (d.profissao || '').trim();
     const modalidade = d.modalidade || 'presencial';
@@ -7139,10 +7141,9 @@ function telaAcessoHtml(){
       <form class="space-y-3 mt-5" onsubmit="event.preventDefault();enviarCadastroPaciente()" novalidate>
         ${campoAcesso({ campo: 'nome', rotulo: 'Nome completo', placeholder: 'Maria da Silva', autocomplete: 'name' })}
         ${campoAcesso({ campo: 'email', rotulo: 'E-mail', tipo: 'email', placeholder: 'nome@email.com', autocomplete: 'email' })}
-        ${campoAcesso({ campo: 'telefone', rotulo: 'Celular (WhatsApp)', tipo: 'tel', placeholder: '(13) 99999-9999', autocomplete: 'tel' })}
+        ${campoAcesso({ campo: 'telefone', rotulo: 'Celular (opcional)', tipo: 'tel', placeholder: '(13) 99999-9999', autocomplete: 'tel' })}
         ${campoAcesso({ campo: 'senha', rotulo: 'Senha', tipo: 'password', placeholder: 'Mínimo 8 caracteres', dica: 'Mínimo de 8 caracteres, com letra e número.', autocomplete: 'new-password' })}
         ${campoAcesso({ campo: 'senha2', rotulo: 'Confirmar senha', tipo: 'password', placeholder: 'Repita a senha', autocomplete: 'new-password' })}
-        <label class="vz-check"><input type="checkbox" data-campo="whatsapp" ${acessoDraft.whatsapp !== false ? 'checked' : ''}><span>Quero receber avisos das minhas consultas pelo WhatsApp (confirmação, lembretes e vagas).</span></label>
         <div>
           <label class="vz-check"><input type="checkbox" data-campo="termos" ${acessoDraft.termos ? 'checked' : ''} ${acessoErros.termos ? 'aria-invalid="true"' : ''}><span>Li e aceito os termos de uso e a política de privacidade (LGPD).</span></label>
           ${acessoErros.termos ? `<div class="vz-msg vz-msg-erro">⚠ ${escaparHtml(acessoErros.termos)}</div>` : ''}
@@ -7256,7 +7257,6 @@ async function enviarCadastroPaciente(){
   acessoDraft.tipo = 'paciente';
   const erros = {};
   validarDadosAcesso(erros);
-  if (acessoDraft.whatsapp && !normalizarTelefoneBR(acessoDraft.telefone || '')) erros.telefone = 'Informe o celular com DDD para receber avisos pelo WhatsApp.';
   if (!acessoDraft.termos) erros.termos = 'É preciso aceitar os termos para criar a conta.';
   if (Object.keys(erros).length) return mostrarErrosAcesso(erros);
   await fazerCadastro();
