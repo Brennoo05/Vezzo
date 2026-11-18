@@ -1573,6 +1573,9 @@ async function agendarComFeedback(pacienteId, horarioId, botao) {
         consultaLocal.supabaseId = consultaSupabaseId;
       }
 
+            try { await carregarConsultasPacienteSupabase(); }
+      catch (e) { console.error('Erro ao ressincronizar consultas:', e); }
+
       salvarDados();
       mostrarToast('Consulta agendada com sucesso.');
       render();
@@ -2033,12 +2036,28 @@ render();
   render();
 }
 
-function confirmarConsultaPaciente(consultaId){
-  const c=state.consultas.find(x=>x.id===consultaId); if(!c||c.status!=='confirmada') return;
-  state.confirmacoes[c.id]={status:'confirmada',confirmadoEm:new Date().toISOString()};
-  const h=getHorario(c.horarioId), prof=getProfissional(h.profissionalId);
-  notificar(null,'cliente_confirmou',`${getPaciente(c.pacienteId)?.nome||'Cliente'} confirmou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,prof.id);
-  mostrarToast('Consulta confirmada.'); render();
+async function confirmarConsultaPaciente(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  if (!c || c.status !== 'confirmada') return;
+  if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
+
+  try {
+    const { error } = await supabaseClient.rpc('confirmar_consulta_vezzo', {
+      p_consulta_id: c.supabaseId
+    });
+    if (error) throw error;
+
+    state.confirmacoes[c.id] = { status: 'confirmada', confirmadoEm: new Date().toISOString() };
+    const h = getHorario(c.horarioId), prof = getProfissional(h.profissionalId);
+    notificar(null, 'cliente_confirmou',
+      `${getPaciente(c.pacienteId)?.nome || 'Cliente'} confirmou a consulta de ${formatarDataCurta(h.data)} às ${h.hora}.`,
+      prof.id);
+    mostrarToast('Consulta confirmada.');
+    render();
+  } catch (erro) {
+    console.error('Erro ao confirmar consulta:', erro);
+    mensagemErro('Não foi possível confirmar a consulta. Tente novamente.');
+  }
 }
 
 function simularLembrete(consultaId){
@@ -2319,6 +2338,32 @@ if (!horarioLocal) {
       ...state.consultas.filter(c => c.pacienteId !== pacienteId),
       ...consultasLocais
     ];
+
+        // Confirmações vindas do banco (fonte da verdade).
+    try {
+      consultasLocais.forEach(c => { delete state.confirmacoes[c.id]; });
+
+      const { data: confs, error: erroConfs } =
+        await supabaseClient.rpc('listar_confirmacoes_paciente_vezzo');
+      if (erroConfs) throw erroConfs;
+
+      const idLocalPorSupabaseId = new Map(consultasLocais.map(c => [c.supabaseId, c.id]));
+      (confs || []).forEach(cf => {
+        const idLocal = idLocalPorSupabaseId.get(cf.consulta_id);
+        if (!idLocal) return;
+        state.confirmacoes[idLocal] = {
+          status: cf.status,
+          auto: cf.automatica,
+          confirmadoEm: cf.confirmado_em,
+          aceiteAte: cf.prazo_aceite ? new Date(cf.prazo_aceite).getTime() : undefined,
+          avisoFila: cf.aviso_fila,
+          avisoPrazo: cf.aviso_prazo,
+          lembretePrazo: cf.lembrete_prazo
+        };
+      });
+    } catch (erroConf) {
+      console.error('Erro ao carregar confirmações:', erroConf);
+    }
 
     salvarDados();
 
