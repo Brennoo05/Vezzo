@@ -4039,7 +4039,18 @@ function renderAgendaProfissional(){
   }
   const d=dataParaDate(state.diaSelecionado), ano=d.getFullYear(), mes=d.getMonth(), total=new Date(ano,mes+1,0).getDate(), inicio=new Date(ano,mes,1).getDay();
   let cells=''; for(let i=0;i<inicio;i++) cells+='<div></div>'; for(let n=1;n<=total;n++){const iso=`${ano}-${String(mes+1).padStart(2,'0')}-${String(n).padStart(2,'0')}`,hs=horariosProfissionaisDaData(iso),ocup=hs.filter(h=>h.pacienteId).length; cells+=`<button onclick="selecionarDia('${iso}')" class="card bg-white p-2 text-left min-h-[88px] ${iso===state.diaSelecionado?'border-[var(--primary)]':''}"><div class="text-sm font-medium">${n}</div><div class="text-[11px] text-[var(--ink-soft)] mt-2">${hs.length} horário(s)</div>${ocup?`<div class="text-[11px] text-[var(--primary)] mt-1">${ocup} ocupado(s)</div>`:''}</button>`;}
-  return `<div class="agenda-month-grid">${cells}</div>`;
+   const hsDia = horariosProfissionaisDaData(state.diaSelecionado);
+  const painelDia = `
+    <div class="card bg-white p-4 mt-4">
+      <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+        <h4 class="font-display text-lg">${formatarDataCompleta(state.diaSelecionado)}</h4>
+        <span class="text-xs text-[var(--ink-soft)]">${hsDia.length} horário(s) · ${hsDia.filter(h=>h.pacienteId).length} ocupado(s)</span>
+      </div>
+      ${hsDia.length
+        ? `<div class="space-y-3">${hsDia.map(h=>cartaoHorario(h,'profissional')).join('')}</div>`
+        : `<p class="text-sm text-[var(--ink-soft)]">Nenhum horário neste dia.</p>`}
+    </div>`;
+  return `<div class="agenda-month-grid">${cells}</div>${painelDia}`;
 }
 function modalDetalheConsulta(){
   const c=state.consultas.find(x=>x.id===consultaDetalheId); const h=c?getHorario(c.horarioId):null; if(!c||!h)return '';
