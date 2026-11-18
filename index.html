@@ -1047,6 +1047,12 @@ function semearDados(){
   agendar(1, 9, { silencioso: true }); // Ana no Dr. Ricardo às 08:00 (hoje)
 }
 
+// Ids podem ser números (dados locais) ou UUIDs (Supabase): só converte o que for número
+function numOuTextoId(v){
+  if (v == null || v === '') return v;
+  return Number.isNaN(Number(v)) ? v : Number(v);
+}
+
 function carregarDados() {
   const salvo = localStorage.getItem('fluxoConsultaState');
   if (salvo) {
@@ -1071,11 +1077,11 @@ function carregarDados() {
     state.lembretesEnviados = state.lembretesEnviados && typeof state.lembretesEnviados === 'object' ? state.lembretesEnviados : {};
     state.configuracoes = state.configuracoes && typeof state.configuracoes === 'object' ? state.configuracoes : {};
         const numOuTexto = v => (v == null ? v : (Number.isNaN(Number(v)) ? v : Number(v)));
-    state.horarios.forEach(h => { h.id=Number(h.id); h.profissionalId=Number(h.profissionalId); h.pacienteId=numOuTexto(h.pacienteId); h.fila=Array.isArray(h.fila)?h.fila.map(numOuTexto):[]; h.status=h.status|| (h.pacienteId?'ocupado':'livre'); if(!Array.isArray(h.filaOrigem) || h.filaOrigem.length!==h.fila.length) h.filaOrigem = h.fila.map(()=>h.agendaId); });
-    state.consultas.forEach(c => { c.id=Number(c.id); c.pacienteId=numOuTexto(c.pacienteId); c.horarioId=Number(c.horarioId); c.status=c.status||'confirmada'; });
+    state.horarios.forEach(h => { h.id=numOuTextoId(h.id); h.profissionalId=numOuTextoId(h.profissionalId); h.pacienteId=numOuTexto(h.pacienteId); h.fila=Array.isArray(h.fila)?h.fila.map(numOuTexto):[]; h.status=h.status|| (h.pacienteId?'ocupado':'livre'); if(!Array.isArray(h.filaOrigem) || h.filaOrigem.length!==h.fila.length) h.filaOrigem = h.fila.map(()=>h.agendaId); });
+    state.consultas.forEach(c => { c.id=numOuTextoId(c.id); c.pacienteId=numOuTexto(c.pacienteId); c.horarioId=numOuTextoId(c.horarioId); c.status=c.status||'confirmada'; });
     // Migração do encaixe: faixas múltiplas, ids inteiros de oferta, validade e paciente em estados antigos
     state.preferenciasEncaixe.forEach(p => {
-      p.consultaId = Number(p.consultaId);
+      p.consultaId = numOuTextoId(p.consultaId);
       if (!Array.isArray(p.diasDisponiveis)) {
         p.diasDisponiveis = (p.dias || []).map(d => ({ diaSemana: Number(d), faixas: [{ inicio: p.horaInicio || '08:00', fim: p.horaFim || '18:00' }] }));
         delete p.dias; delete p.horaInicio; delete p.horaFim;
@@ -1085,17 +1091,17 @@ function carregarDados() {
     });
     if (!Number.isInteger(state.proximoIdOfertaEncaixe)) state.proximoIdOfertaEncaixe = 1 + Math.max(0, ...state.ofertasEncaixe.map(o => Number.isInteger(o.id) ? o.id : 0));
     state.ofertasEncaixe.forEach(o => {
-      if (!Number.isInteger(o.id)) { const ant = o.id; o.id = state.proximoIdOfertaEncaixe++; state.notificacoes.forEach(n => { if (n.ofertaEncaixeId === ant) n.ofertaEncaixeId = o.id; }); }
-      o.consultaId = Number(o.consultaId); o.horarioLivreId = Number(o.horarioLivreId);
+      if (!Number.isInteger(o.id) && !/^[0-9a-f-]{36}$/i.test(String(o.id))) { const ant = o.id; o.id = state.proximoIdOfertaEncaixe++; state.notificacoes.forEach(n => { if (n.ofertaEncaixeId === ant) n.ofertaEncaixeId = o.id; }); }
+      o.consultaId = numOuTextoId(o.consultaId); o.horarioLivreId = numOuTextoId(o.horarioLivreId);
       if (o.pacienteId == null) { const cc = state.consultas.find(x => x.id === o.consultaId); if (cc) o.pacienteId = cc.pacienteId; }
       if (!o.expiraEm) o.expiraEm = new Date(new Date(o.criadaEm || Date.now()).getTime() + 120 * 60000).toISOString();
     });
     // Migração leve: garante que dados salvos antes destas melhorias não quebrem a tela.
     // Compatibilidade com estados salvos de versões anteriores: IDs devem ter o mesmo tipo.
-    state.profissionais = (state.profissionais || []).map(p => ({...p, id:Number(p.id)}));
-    state.pacientes = (state.pacientes || []).map(p => ({...p, id:Number(p.id)}));
-    state.horarios = (state.horarios || []).map(h => ({...h, id:Number(h.id), profissionalId:Number(h.profissionalId), pacienteId:h.pacienteId == null ? null : Number(h.pacienteId)}));
-    state.consultas = (state.consultas || []).map(c => ({...c, id:Number(c.id), pacienteId:Number(c.pacienteId), horarioId:Number(c.horarioId), alertaFaltas:!!c.alertaFaltas}));
+    state.profissionais = (state.profissionais || []).map(p => ({...p, id:numOuTextoId(p.id)}));
+    state.pacientes = (state.pacientes || []).map(p => ({...p, id:numOuTextoId(p.id)}));
+    state.horarios = (state.horarios || []).map(h => ({...h, id:numOuTextoId(h.id), profissionalId:numOuTextoId(h.profissionalId), pacienteId:h.pacienteId == null ? null : numOuTextoId(h.pacienteId)}));
+    state.consultas = (state.consultas || []).map(c => ({...c, id:numOuTextoId(c.id), pacienteId:numOuTextoId(c.pacienteId), horarioId:numOuTextoId(c.horarioId), alertaFaltas:!!c.alertaFaltas}));
     if (state.agendaAberta === undefined) state.agendaAberta = false;
     if (!Array.isArray(state.bloqueios)) state.bloqueios = [];
     if (!Array.isArray(state.recorrencias)) state.recorrencias = [];
@@ -4555,7 +4561,7 @@ function telaProfissional(){
   // Isso evita que uma consulta desapareça do painel caso o status visual do horário tenha sido alterado.
   const consultasDoProfissional = state.consultas
     .map(c => ({ consulta: c, horario: getHorario(c.horarioId) }))
-    .filter(x => x.horario && Number(x.horario.profissionalId) === Number(state.usuario.id))
+    .filter(x => x.horario && String(x.horario.profissionalId) === String(state.usuario.id))
     .sort((a,b) => (a.horario.data+a.horario.hora).localeCompare(b.horario.data+b.horario.hora));
   const futuras = consultasDoProfissional.filter(x => x.consulta.status === 'confirmada' && !consultaJaPassou(x.horario));
   const consultasDaAgendaSelecionada = consultasDoProfissional.filter(x => x.horario.agendaId === agendaSelecionadaId);
