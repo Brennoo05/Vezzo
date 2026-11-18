@@ -767,7 +767,7 @@ async function removerRecorrencia(id) {
   const r = state.recorrencias.find(x => x.id === id);
   if (!r) return;
   if (!r.supabaseId) return mensagemErro('Esta recorrência não está vinculada ao Supabase.');
-  if (!confirm('Remover esta recorrência? Os horários livres dela serão apagados (os que têm consulta ou fila continuam).')) return;
+  if (!(await confirmarAcao({ titulo: 'Remover recorrência', mensagem: 'Os horários livres desta recorrência serão apagados. Horários com consulta ou fila de espera continuam.', textoConfirmar: 'Remover', perigo: true }))) return;
 
   try {
     // Uma única chamada: o banco apaga os horários livres e a recorrência de uma vez
@@ -1269,6 +1269,40 @@ function limparCacheLocal(){
   state.proximoIdPaciente = 1;
   state.proximoIdRecorrencia = 1;
   state.proximoIdBloqueio = 1;
+}
+
+// Janela de confirmação no visual do Vezzo (substitui o confirm() do navegador).
+// Uso: if (!(await confirmarAcao({ titulo, mensagem, textoConfirmar, perigo: true }))) return;
+function confirmarAcao({ titulo = 'Confirmar', mensagem = '', textoConfirmar = 'Confirmar', textoCancelar = 'Voltar', perigo = false } = {}){
+  return new Promise(resolve => {
+    document.getElementById('modal-confirmar-acao')?.remove();
+    const modal = document.createElement('div');
+    modal.id = 'modal-confirmar-acao';
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="card bg-white p-6 max-w-md w-full" role="alertdialog" aria-modal="true" aria-labelledby="titulo-confirmar-acao" aria-describedby="texto-confirmar-acao">
+        <h3 id="titulo-confirmar-acao" class="font-display text-xl">${escaparHtml(titulo)}</h3>
+        <p id="texto-confirmar-acao" class="text-sm text-[var(--ink-soft)] mt-2">${escaparHtml(mensagem)}</p>
+        <div class="flex gap-2 mt-6">
+          <button data-acao="cancelar" class="btn-ghost flex-1 py-2.5 text-sm">${escaparHtml(textoCancelar)}</button>
+          <button data-acao="confirmar" class="${perigo ? 'btn-brick' : 'btn-primary'} flex-1 py-2.5 text-sm font-medium">${escaparHtml(textoConfirmar)}</button>
+        </div>
+      </div>`;
+    const fechar = valor => {
+      document.removeEventListener('keydown', teclado);
+      modal.remove();
+      resolve(valor);
+    };
+    const teclado = e => { if (e.key === 'Escape') fechar(false); };
+    modal.addEventListener('click', e => {
+      if (e.target === modal) return fechar(false);
+      const acao = e.target.closest('[data-acao]')?.dataset.acao;
+      if (acao) fechar(acao === 'confirmar');
+    });
+    document.addEventListener('keydown', teclado);
+    document.body.appendChild(modal);
+    modal.querySelector('[data-acao="confirmar"]')?.focus();
+  });
 }
 
 function nomeDoPaciente(pacienteId){
@@ -4362,22 +4396,84 @@ async function carregarMinhasAvaliacoes(){
   }
 }
 
-async function avaliarConsulta(consultaId, nota){
+const ROTULOS_NOTA = ['', 'Ruim', 'Regular', 'Bom', 'Muito bom', 'Excelente'];
+let notaAvaliacaoSelecionada = 0;
+
+// Abre o formulário de avaliação (a estrela clicada no histórico já vem selecionada)
+function avaliarConsulta(consultaId, nota = 0){
   const c = state.consultas.find(x => x.id === consultaId);
   if (!c || c.status !== 'realizada') return;
   if (!c.supabaseId) return mensagemErro('Não foi possível identificar a consulta no Supabase.');
-  if (!confirm(`Avaliar este atendimento com ${nota} ${nota === 1 ? 'estrela' : 'estrelas'}?`)) return;
+  const h = getHorario(c.horarioId);
+  const prof = h ? getProfissional(h.profissionalId) : null;
+
+  notaAvaliacaoSelecionada = Number(nota) || 0;
+  fecharAvaliacao();
+  const modal = document.createElement('div');
+  modal.id = 'modal-avaliacao';
+  modal.className = 'modal-overlay';
+  modal.addEventListener('click', e => { if (e.target === modal) fecharAvaliacao(); });
+  modal.innerHTML = `
+    <div class="card bg-white p-6 max-w-md w-full text-center" role="dialog" aria-modal="true" aria-labelledby="titulo-avaliacao">
+      <div class="flex justify-end"><button onclick="fecharAvaliacao()" class="btn-ghost px-3 py-1.5" aria-label="Fechar">✕</button></div>
+      <h3 id="titulo-avaliacao" class="font-display text-xl -mt-2">Como foi seu atendimento?</h3>
+      <p class="text-sm text-[var(--ink-soft)] mt-1">${escaparHtml(prof?.nome || 'Profissional')}${h ? ` · ${formatarDataCurta(h.data)} às ${h.hora}` : ''}</p>
+      <div id="avaliacao-estrelas" class="flex justify-center gap-1 mt-5" role="radiogroup" aria-label="Nota de 1 a 5">
+        ${[1,2,3,4,5].map(n => `<button type="button" data-nota="${n}" role="radio" aria-label="${n} ${n === 1 ? 'estrela' : 'estrelas'} — ${ROTULOS_NOTA[n]}"
+            onclick="selecionarNotaAvaliacao(${n})" onmouseenter="pintarEstrelasAvaliacao(${n})" onfocus="pintarEstrelasAvaliacao(${n})"
+            style="background:none;border:none;cursor:pointer;font-size:2.4rem;line-height:1;padding:0 4px;color:#B45309;min-height:auto">☆</button>`).join('')}
+      </div>
+      <div id="avaliacao-rotulo" class="text-sm font-medium mt-2" style="min-height:1.25rem;color:#B45309"></div>
+      <div class="flex gap-2 mt-6">
+        <button onclick="fecharAvaliacao()" class="btn-ghost flex-1 py-2.5 text-sm">Agora não</button>
+        <button id="btn-enviar-avaliacao" onclick="enviarAvaliacao(${consultaId})" class="btn-primary flex-1 py-2.5 text-sm font-medium">Enviar avaliação</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#avaliacao-estrelas').addEventListener('mouseleave', () => pintarEstrelasAvaliacao(notaAvaliacaoSelecionada));
+  pintarEstrelasAvaliacao(notaAvaliacaoSelecionada);
+}
+
+function pintarEstrelasAvaliacao(nota){
+  document.querySelectorAll('#avaliacao-estrelas [data-nota]').forEach(b => {
+    const n = Number(b.dataset.nota);
+    b.textContent = n <= nota ? '★' : '☆';
+    b.setAttribute('aria-checked', String(n === notaAvaliacaoSelecionada));
+  });
+  const rotulo = document.getElementById('avaliacao-rotulo');
+  if (rotulo) rotulo.textContent = ROTULOS_NOTA[nota] || 'Toque nas estrelas para dar sua nota';
+  const botao = document.getElementById('btn-enviar-avaliacao');
+  if (botao) botao.disabled = !notaAvaliacaoSelecionada;
+}
+
+function selecionarNotaAvaliacao(nota){
+  notaAvaliacaoSelecionada = nota;
+  pintarEstrelasAvaliacao(nota);
+}
+
+function fecharAvaliacao(){
+  document.getElementById('modal-avaliacao')?.remove();
+}
+
+async function enviarAvaliacao(consultaId){
+  const c = state.consultas.find(x => x.id === consultaId);
+  const nota = notaAvaliacaoSelecionada;
+  if (!c || !nota) return;
+  const botao = document.getElementById('btn-enviar-avaliacao');
+  if (botao) { botao.disabled = true; botao.textContent = 'Enviando...'; }
   try {
     const { error } = await supabaseClient.rpc('avaliar_consulta_vezzo', { p_consulta_id: c.supabaseId, p_nota: nota });
     if (error) throw error;
     state.avaliacoes[c.id] = { nota, criadoEm: new Date().toISOString() };
     salvarDados();
+    fecharAvaliacao();
     mostrarToast('Avaliação enviada. Obrigado!');
+    render();
   } catch (erro) {
     console.error('Erro ao avaliar consulta:', erro);
+    if (botao) { botao.disabled = false; botao.textContent = 'Enviar avaliação'; }
     mensagemErro(erro?.message || 'Não foi possível enviar a avaliação.');
   }
-  render();
 }
 
 function avaliacaoHtml(c){
@@ -4387,9 +4483,11 @@ function avaliacaoHtml(c){
     return `<div class="text-xs mt-1 text-[var(--ink-soft)]">Sua avaliação: <span style="color:#B45309;font-size:.95rem">${'★'.repeat(Number(av.nota))}${'☆'.repeat(5 - Number(av.nota))}</span></div>`;
   }
   const estrelas = [1,2,3,4,5].map(n =>
-    `<button type="button" onclick="avaliarConsulta(${c.id}, ${n})" title="${n} ${n === 1 ? 'estrela' : 'estrelas'}" aria-label="Avaliar com ${n} ${n === 1 ? 'estrela' : 'estrelas'}" style="color:#B45309;background:none;border:none;cursor:pointer;font-size:1.35rem;line-height:1;padding:0 2px;min-height:auto">☆</button>`
+    `<button type="button" data-n="${n}" onclick="avaliarConsulta(${c.id}, ${n})" title="${n} ${n === 1 ? 'estrela' : 'estrelas'}" aria-label="Avaliar com ${n} ${n === 1 ? 'estrela' : 'estrelas'}"
+      onmouseenter="this.parentElement.querySelectorAll('[data-n]').forEach(b => b.textContent = Number(b.dataset.n) <= ${n} ? '★' : '☆')"
+      style="color:#B45309;background:none;border:none;cursor:pointer;font-size:1.35rem;line-height:1;padding:0 2px;min-height:auto">☆</button>`
   ).join('');
-  return `<div class="flex items-center gap-1 mt-2 flex-wrap"><span class="text-xs text-[var(--ink-soft)] mr-1">Avalie o atendimento:</span>${estrelas}</div>`;
+  return `<div class="flex items-center gap-1 mt-2 flex-wrap"><span class="text-xs text-[var(--ink-soft)] mr-1">Avalie o atendimento:</span><span class="inline-flex" onmouseleave="this.querySelectorAll('[data-n]').forEach(b => b.textContent = '☆')">${estrelas}</span></div>`;
 }
 function resumoAvaliacoes(profId){
   const arr = avaliacoesDoProfissional(profId);
@@ -4867,7 +4965,7 @@ async function excluirHorarioSupabase(id) {
     return mensagemErro('Este horário ainda não está vinculado ao Supabase.');
   }
 
-  if (!confirm('Deseja realmente excluir este horário?')) return;
+  if (!(await confirmarAcao({ titulo: 'Excluir horário', mensagem: 'Este horário livre será removido da agenda.', textoConfirmar: 'Excluir', perigo: true }))) return;
 
   try {
     const { error } = await supabaseClient
