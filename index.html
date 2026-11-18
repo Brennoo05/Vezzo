@@ -770,65 +770,23 @@ if (r.ok) {
 async function removerRecorrencia(id) {
   const r = state.recorrencias.find(x => x.id === id);
   if (!r) return;
+  if (!r.supabaseId) return mensagemErro('Esta recorrência não está vinculada ao Supabase.');
+  if (!confirm('Remover esta recorrência? Os horários livres dela serão apagados (os que têm consulta ou fila continuam).')) return;
 
   try {
-    const agenda = state.agendas.find(a => a.id === r.agendaId);
+    // Uma única chamada: o banco apaga os horários livres e a recorrência de uma vez
+    const { data: removidos, error } = await supabaseClient.rpc('remover_recorrencia_vezzo', {
+      p_recorrencia_id: r.supabaseId
+    });
+    if (error) throw error;
 
-    // Exclui do Supabase somente os horários livres
-    // correspondentes aos dias da recorrência.
-    let data = r.inicio;
-
-    while (data <= r.fim) {
-      const diaSemana = dataParaDate(data).getDay();
-
-      if (r.dias.includes(diaSemana)) {
-        const { error } = await supabaseClient
-          .from('horarios')
-          .delete()
-          .eq('profissional_id', r.profissionalId)
-          .eq('agenda_id', agenda.supabaseId)
-          .eq('data', data)
-          .eq('hora', r.hora)
-          .eq('status', 'livre');
-
-        if (error) throw error;
-      }
-
-      data = adicionarDiasISO(data, 1);
-    }
-
-    // Exclui o registro da recorrência no Supabase.
-    if (r.supabaseId) {
-      const { error } = await supabaseClient
-        .from('recorrencias')
-        .delete()
-        .eq('id', r.supabaseId)
-        .eq('profissional_id', r.profissionalId);
-
-      if (error) throw error;
-    }
-
-    // Atualiza os dados locais.
-    state.horarios = state.horarios.filter(h =>
-      !(h.profissionalId === r.profissionalId &&
-        h.agendaId === r.agendaId &&
-        h.hora === r.hora &&
-        h.data >= r.inicio &&
-        h.data <= r.fim &&
-        r.dias.includes(dataParaDate(h.data).getDay()) &&
-        !h.pacienteId &&
-        !h.fila.length)
-    );
-
-    state.recorrencias = state.recorrencias.filter(x => x.id !== id);
-
-    salvarDados();
-    mostrarToast('Recorrência removida com sucesso.', 'success');
+    await recarregarAgendaProfissional();
+    mostrarToast(`Recorrência removida · ${removidos || 0} horário(s) livre(s) apagado(s).`, 'success');
     render();
 
   } catch (erro) {
     console.error('Erro ao remover recorrência:', erro);
-    mensagemErro('Não foi possível remover a recorrência no Supabase.');
+    mensagemErro(erro?.message || 'Não foi possível remover a recorrência.');
   }
 }
 
